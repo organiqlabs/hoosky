@@ -1,0 +1,6 @@
+# Editor/OS droppings
+*.swp
+.DS_Store
+
+# prepare-commit-msg sibling temp files (same-dir temp + mv abort path)
+*.ai-commit.*

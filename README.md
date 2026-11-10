@@ -7,13 +7,14 @@ back to the normal empty message.
 ## Install
 
 ```sh
-install -m755 pre-commit /path/to/.git/hooks/prepare-commit-msg
+install -m755 prepare-commit-msg /path/to/repo/.git/hooks/prepare-commit-msg
 ```
 
-The file is named `pre-commit`, but it is neither the `pre-commit.com` framework
-nor a pre-commit hook — it is a `prepare-commit-msg` hook. It is not installed
-anywhere by default; it lives in this repo uninstalled on purpose. Not to be
-confused with the sibling `organiqbit-hooks` TypeScript project either.
+The file is named `prepare-commit-msg`, and that's what it installs as — Git's
+`prepare-commit-msg` hook. It is not the `pre-commit.com` framework and not the
+sibling `organiqbit-hooks` TypeScript project. This repo has it installed at
+`.git/hooks/prepare-commit-msg` for dogfooding; refresh the installed copy after
+hook changes with `install -m755 prepare-commit-msg .git/hooks/prepare-commit-msg`.
 
 ## Use
 
@@ -22,8 +23,7 @@ git commit                  # editor opens pre-filled with an AI draft
 SKIP_AI_COMMIT=1 git commit # bypass entirely
 ```
 
-Set `GEMINI_API_KEY` first. Without it, or on any failure — missing `curl`/`jq`/`git`, an unparseable API response, unsafe key characters — the hook warns on stderr and exits 0 without modifying your message, so the commit behaves exactly as if the hook weren't installed. It also stays out of the way when you pass `-m`, merge,
-squash, amend, or the message file already has content.
+Set `GEMINI_API_KEY` first. On the warning paths — missing `curl`/`jq`/`git`/`grep`, an unparseable API response, unsafe key characters — the hook prints a one-line reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=1`, `-m`/merge/squash/amend, a message file that already has content, or an empty staged diff it exits 0 silently. Either way, the commit behaves exactly as if the hook weren't installed.
 
 | Variable                   | Default                 | Meaning                                             |
 | -------------------------- | ----------------------- | --------------------------------------------------- |
@@ -33,21 +33,26 @@ squash, amend, or the message file already has content.
 | `GEMINI_TIMEOUT`           | `20`                    | Seconds before curl gives up                        |
 | `GEMINI_MAX_SUBJECT_CHARS` | `50`                    | Subject limit; cut at a word boundary               |
 | `GEMINI_BODY_WRAP_CHARS`   | `75`                    | Body wrap width                                     |
+| `GEMINI_DETAIL_LEVEL`      | `minimal`               | Detail tier: `minimal` \| `standard` \| `detailed`  |
 
-Staged secret material never reaches the API: `.env*` files, private keys and
-certificates, credential files (`.npmrc`, `.netrc`, `credentials*.json`, …),
-lockfiles, and minified assets are excluded from the diff that is sent. The
-`.git` history and hooks are not part of the payload, and the API key is never
-exposed in `ps` output.
+Staged secret/credential material is excluded from the diff sent to the API, matched
+at any depth (root and nested), case-insensitively where applicable: `.env*` files,
+private keys and certificates (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
+`*.ppk`, SSH key material incl. `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`), cloud and tool
+credentials (`.aws/credentials`, `.m2/settings.xml`, `.npmrc`, `.netrc`, `.git-credentials`,
+`.pgpass`, `.htpasswd`, `credentials*.json`, `secrets.*`, Docker/Kubernetes config),
+lockfiles (`*.lock`, `package-lock.json`, `pnpm-lock.yaml`, `npm-shrinkwrap.json`, `bun.lockb`),
+and minified assets (`*.min.js`, `*.min.css`, `*.map`). `.git` history and hook files
+are not part of the payload, and the API key is never exposed in `ps` output.
 
 ## Development
 
 ```sh
-bash -n pre-commit        # syntax check
-bash test-pre-commit.sh   # full suite; stubs curl, never touches the network
+bash -n prepare-commit-msg        # syntax check
+bash prepare-commit-msg.test.sh   # full suite; stubs curl, never touches the network
 ```
 
-Deps: `bash`, `git`, `jq` (curl at runtime). No build, no CI, no manifest.
+Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; `tr`/`sed` are required POSIX tools). No build, no CI, no manifest.
 Repo conventions for agents: [AGENTS.md](AGENTS.md).
 
 ## License

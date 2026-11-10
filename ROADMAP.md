@@ -6,7 +6,7 @@
 
 ## P4 — Parking lot (don't pick)
 
-- [ ] **Optional hardening backlog (parking lot)**
+- [ ] **Locale-dependent slice/length semantics accepted (jq tolerates U+FFFD)**
   - **File**: `pre-commit`
-  - **Source**: scan: formatting + resource limits
-  - **Details**: shfmt -i 2 wants style-only diffs (rejected: churn on a consistent 2-space codebase, no formatter declared). curl --max-filesize cap on the Gemini response was considered (low value against a fixed first-party API; revisit if endpoint becomes configurable).
+  - **Source**: sub-agent static scan
+  - **Details**: LC_ALL=C wrapping of length/slice expansions is possible but ugly through subshells; residual risk is NOTE wording only since jq tolerates invalid UTF-8 as U+FFFD. Deferred park; revisit only if a user reports garbled diff content.

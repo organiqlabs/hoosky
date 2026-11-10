@@ -11,14 +11,53 @@ COMMIT_SOURCE="${2:-}"
 MODEL="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
 MAX_DIFF_CHARS="${GEMINI_MAX_DIFF_CHARS:-30000}"
 TIMEOUT="${GEMINI_TIMEOUT:-20}"
+MAX_SUBJECT_CHARS="${GEMINI_MAX_SUBJECT_CHARS:-50}"
+BODY_WRAP_CHARS="${GEMINI_BODY_WRAP_CHARS:-75}"
 case "$MAX_DIFF_CHARS" in ''|*[!0-9]*) MAX_DIFF_CHARS=30000 ;; esac
-case "$TIMEOUT" in ''|*[!0-9]*) TIMEOUT=20 ;; esac
+[ "${#MAX_DIFF_CHARS}" -gt 15 ] && MAX_DIFF_CHARS=30000
+MAX_DIFF_CHARS=$((10#$MAX_DIFF_CHARS))
+case "$TIMEOUT" in ''|*[!0-9]*|0) TIMEOUT=20 ;; esac
+[ "${#TIMEOUT}" -gt 2 ] && TIMEOUT=20
+TIMEOUT=$((10#$TIMEOUT))
+case "$MAX_SUBJECT_CHARS" in ''|*[!0-9]*|0) MAX_SUBJECT_CHARS=50 ;; esac
+[ "${#MAX_SUBJECT_CHARS}" -gt 3 ] && MAX_SUBJECT_CHARS=50
+MAX_SUBJECT_CHARS=$((10#$MAX_SUBJECT_CHARS))
+case "$BODY_WRAP_CHARS" in ''|*[!0-9]*|0) BODY_WRAP_CHARS=75 ;; esac
+[ "${#BODY_WRAP_CHARS}" -gt 3 ] && BODY_WRAP_CHARS=75
+BODY_WRAP_CHARS=$((10#$BODY_WRAP_CHARS))
 API_URL="https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent"
 
 warn() { printf 'ai-commit: %s\n' "$*" >&2; }
 
-# --- Guards ---------------------------------------------------------------
+# Greedily re-wrap stdin to <width> columns; blank lines delimit paragraphs.
+# A word longer than <width> sits on its own line (never split).
+wrap_text() {
+  local width="$1" line w cur=""
+  local -a words=()
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*$ ]]; then
+      if [ -n "$cur" ]; then printf '%s\n' "$cur"; cur=""; fi
+      printf '\n'
+      continue
+    fi
+    IFS=' ' read -ra words <<< "$line"
+    for w in "${words[@]}"; do
+      if [ -z "$cur" ]; then
+        cur="$w"
+      elif [ $(( ${#cur} + 1 + ${#w} )) -le "$width" ]; then
+        cur="$cur $w"
+      else
+        printf '%s\n' "$cur"
+        cur="$w"
+      fi
+    done
+  done
+  if [ -n "$cur" ]; then printf '%s\n' "$cur"; fi
+}
+
+# --- Guards
 [ -n "$COMMIT_MSG_FILE" ] || exit 0
+[ -r "$COMMIT_MSG_FILE" ] && [ ! -d "$COMMIT_MSG_FILE" ] || { warn "message file '$COMMIT_MSG_FILE' not readable; skipping"; exit 0; }
 [ "${SKIP_AI_COMMIT:-0}" = "1" ] && exit 0
 case "$COMMIT_SOURCE" in message|merge|squash|commit) exit 0 ;; esac  # -m, merge, squash, amend/-c/-C
 grep -qE '^[^#[:space:]]' "$COMMIT_MSG_FILE" && exit 0                # message already has content
@@ -31,11 +70,18 @@ case "$GEMINI_API_KEY" in
   *\"*|*\\*|*$'\r'*|*$'\n'*) warn "GEMINI_API_KEY contains characters unsafe for curl config; skipping"; exit 0 ;;
 esac
 
-# --- Collect context ------------------------------------------------------
-EXCLUDES=(':(exclude)*.lock' ':(exclude)package-lock.json' ':(exclude)*.min.js'
-          ':(exclude)*.env*' ':(exclude)*.pem' ':(exclude)*.key')
+# --- Collect context
+EXCLUDES=(':(exclude,icase)*.env*' ':(exclude).npmrc' ':(exclude).pypirc' ':(exclude).netrc'
+          ':(exclude).git-credentials' ':(exclude,icase)*credentials*.json'
+          ':(exclude,icase)secrets.*' ':(exclude,icase)id_rsa*' ':(exclude).pgpass' ':(exclude).htpasswd'
+          ':(exclude).docker/config.json' ':(exclude).kube/config'
+          ':(exclude,icase)*.p12' ':(exclude,icase)*.pfx' ':(exclude,icase)*.jks' ':(exclude,icase)*.keystore'
+          ':(exclude,icase)*.pem' ':(exclude,icase)*.key'
+          ':(exclude,icase)*.lock' ':(exclude)package-lock.json' ':(exclude)npm-shrinkwrap.json'
+          ':(exclude)pnpm-lock.yaml' ':(exclude)bun.lockb'
+          ':(exclude)*.min.js' ':(exclude,icase)*.min.css' ':(exclude)*.map')
 
-FULL_DIFF="$(git diff --cached --no-color --unified=2 -- . "${EXCLUDES[@]}")"
+FULL_DIFF="$(git diff --no-ext-diff --no-textconv --cached --no-color --unified=2 -- . "${EXCLUDES[@]}")"
 [ -n "$FULL_DIFF" ] || exit 0
 
 NOTE=""
@@ -48,23 +94,27 @@ if [ "${#FULL_DIFF}" -gt "$MAX_DIFF_CHARS" ]; then
   NOTE="(Diff truncated to the first ${MAX_DIFF_CHARS} characters; cut at a line boundary.)"
 fi
 
-STAT="$(git diff --cached --stat --no-color -- . "${EXCLUDES[@]}")"
+STAT="$(git diff --no-ext-diff --no-textconv --cached --stat --no-color -- . "${EXCLUDES[@]}" | tail -c 4000)"
 BRANCH="$(git branch --show-current 2>/dev/null)"
 RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 
-TMP="$(mktemp -d)" || exit 0
-trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)" || { warn "mktemp -d failed; skipping"; exit 0; }
+SIBLING=""
+trap 'rm -rf "$TMP"; [ -z "$SIBLING" ] || rm -f "$SIBLING"' EXIT
 
-# --- Build request --------------------------------------------------------
+# --- Build request
 cat > "$TMP/prompt.txt" <<EOF
-You are writing a git commit message for the staged changes below.
+A commit message is permanent technical documentation. Explain *why* a change is necessary with precision.
 
-Rules:
-- Use Conventional Commits: type(scope): summary (feat, fix, docs, style, refactor, perf, test, build, ci, chore).
-- Subject line: imperative mood, max 72 characters, no trailing period.
-- If the change is non-trivial, add a blank line and a short body (wrapped at 72 columns) explaining what and why, not how.
-- Describe only what the diff shows. Do not invent details.
-- Output ONLY the commit message: no preamble, no markdown, no code fences.
+Respond in plain text only. Do NOT use markdown, code fences, backticks, or any formatting. Output ONLY the commit message itself — no preamble, no explanation, no commentary before or after.
+
+Structure the message as a subject line with an imperative verb (max ${MAX_SUBJECT_CHARS} characters), then a blank line, then the body (wrapped at ${BODY_WRAP_CHARS} columns).
+
+Use Conventional Commits: type(scope): summary (feat, fix, docs, style, refactor, perf, test, build, ci, chore). Never end the subject with a period. Name only files, symbols, and issue numbers that appear in the diff below.
+
+Minimal:  Subject line + single paragraph of technical reasoning.
+Standard: Multi-paragraph technical justification: problem and solution.
+Detailed: Exhaustive docs: before/after state, logic flow, architectural implications.
 
 Branch: ${BRANCH}
 Recent commit subjects (match their style where sensible):
@@ -78,11 +128,12 @@ ${DIFF}
 ${NOTE}
 EOF
 
-jq -n --rawfile p "$TMP/prompt.txt" '{contents:[{parts:[{text:$p}]}]}' > "$TMP/body.json" || exit 0
+jq -n --rawfile p "$TMP/prompt.txt" '{contents:[{parts:[{text:$p}]}]}' > "$TMP/body.json" || { warn "could not build request payload; skipping"; exit 0; }
 
 # --- Call Gemini (key goes via stdin config so it never shows up in `ps`) --
+# --max-filesize caps the response; on exceed curl fails and the hook no-ops.
 RESPONSE="$(printf 'header = "x-goog-api-key: %s"\n' "$GEMINI_API_KEY" |
-  curl -sS --max-time "$TIMEOUT" -K - \
+  curl -sS --max-time "$TIMEOUT" --max-filesize 10485760 -K - \
     -H 'Content-Type: application/json' \
     -d @"$TMP/body.json" "$API_URL" 2>"$TMP/curl.err")"
 
@@ -97,10 +148,38 @@ if [ -z "$MSG" ]; then
 fi
 
 # Strip stray code fences and leading blank lines
-MSG="$(printf '%s\n' "$MSG" | sed -e '/^```/d' -e '/./,$!d')"
+MSG="$(printf '%s' "$MSG" | tr -d '\r' | sed -e '/^```/d' -e '/./,$!d')"
 
-# --- Prepend draft; keep git's own comment block below it ------------------
-{ printf '%s\n\n' "$MSG"; cat "$COMMIT_MSG_FILE"; } > "$TMP/new_msg" &&
-  cat "$TMP/new_msg" > "$COMMIT_MSG_FILE"
+# --- Normalize the final format: subject limit + body wrap (configurable)
+SUBJ="${MSG%%$'\n'*}"
+REM="${MSG#"$SUBJ"}"
+BODY="${REM#$'\n'}"
+if [ "${#SUBJ}" -gt "$MAX_SUBJECT_CHARS" ]; then
+  CUT="${SUBJ:0:$MAX_SUBJECT_CHARS}"
+  TRIMMED="${CUT% *}"             # cut back to the last word boundary
+  [ -z "$TRIMMED" ] && TRIMMED="$CUT"
+  [ "$TRIMMED" = "$CUT" ] || TRIMMED="${TRIMMED% }"
+  warn "subject exceeds ${MAX_SUBJECT_CHARS} chars; truncated"
+  SUBJ="$TRIMMED"
+fi
+if [ -n "$BODY" ]; then
+  WRAPPED="$(printf '%s\n' "$BODY" | wrap_text "$BODY_WRAP_CHARS")"
+  if [ -n "$WRAPPED" ]; then
+    MSG="$SUBJ"$'\n'"$WRAPPED"
+  else
+    MSG="$SUBJ"$'\n'"$BODY"
+  fi
+else
+  MSG="$SUBJ"
+fi
 
+# --- Prepend draft; atomic-ish write into the same directory as the msg file
+SIBLING="${COMMIT_MSG_FILE}.ai-commit.$$"
+if { printf '%s\n\n' "$MSG"; cat "$COMMIT_MSG_FILE"; } > "$SIBLING" 2>/dev/null &&
+  mv -f "$SIBLING" "$COMMIT_MSG_FILE"; then
+  SIBLING=""
+  exit 0
+fi
+rm -f "$SIBLING"
+warn "could not write message file; leaving it unchanged"
 exit 0

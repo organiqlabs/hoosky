@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# .git/hooks/prepare-commit-msg
+# Install as .git/hooks/prepare-commit-msg (the filename here is misleading).
+# Drafts a commit message from the staged diff using one Gemini request.
+# Never blocks a commit: any failure just falls back to the normal empty message.
+set -u
+
+COMMIT_MSG_FILE="${1:-}"
+COMMIT_SOURCE="${2:-}"
+
+MODEL="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
+MAX_DIFF_CHARS="${GEMINI_MAX_DIFF_CHARS:-30000}"
+TIMEOUT="${GEMINI_TIMEOUT:-20}"
+API_URL="https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent"
+
+warn() { printf 'ai-commit: %s\n' "$*" >&2; }
+
+# --- Guards ---------------------------------------------------------------
+[ -n "$COMMIT_MSG_FILE" ] || exit 0
+[ "${SKIP_AI_COMMIT:-0}" = "1" ] && exit 0
+case "$COMMIT_SOURCE" in message|merge|squash|commit) exit 0 ;; esac  # -m, merge, squash, amend/-c/-C
+grep -qE '^[^#[:space:]]' "$COMMIT_MSG_FILE" && exit 0                # message already has content
+
+for cmd in curl jq git; do
+  command -v "$cmd" >/dev/null 2>&1 || { warn "'$cmd' not found; skipping"; exit 0; }
+done
+[ -n "${GEMINI_API_KEY:-}" ] || { warn "GEMINI_API_KEY not set; skipping"; exit 0; }
+case "$GEMINI_API_KEY" in
+  *\"*|*\\*|*$'\r'*|*$'\n'*) warn "GEMINI_API_KEY contains characters unsafe for curl config; skipping"; exit 0 ;;
+esac
+
+# --- Collect context ------------------------------------------------------
+EXCLUDES=(':(exclude)*.lock' ':(exclude)package-lock.json' ':(exclude)*.min.js'
+          ':(exclude)*.env*' ':(exclude)*.pem' ':(exclude)*.key')
+
+FULL_DIFF="$(git diff --cached --no-color --unified=2 -- . "${EXCLUDES[@]}")"
+[ -n "$FULL_DIFF" ] || exit 0
+
+NOTE=""
+DIFF="$FULL_DIFF"
+if [ "${#FULL_DIFF}" -gt "$MAX_DIFF_CHARS" ]; then
+  DIFF="${FULL_DIFF:0:$MAX_DIFF_CHARS}"
+  NOTE="(Diff truncated to the first ${MAX_DIFF_CHARS} characters.)"
+fi
+
+STAT="$(git diff --cached --stat --no-color -- . "${EXCLUDES[@]}")"
+BRANCH="$(git branch --show-current 2>/dev/null)"
+RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
+
+TMP="$(mktemp -d)" || exit 0
+trap 'rm -rf "$TMP"' EXIT
+
+# --- Build request --------------------------------------------------------
+cat > "$TMP/prompt.txt" <<EOF
+You are writing a git commit message for the staged changes below.
+
+Rules:
+- Use Conventional Commits: type(scope): summary (feat, fix, docs, style, refactor, perf, test, build, ci, chore).
+- Subject line: imperative mood, max 72 characters, no trailing period.
+- If the change is non-trivial, add a blank line and a short body (wrapped at 72 columns) explaining what and why, not how.
+- Describe only what the diff shows. Do not invent details.
+- Output ONLY the commit message: no preamble, no markdown, no code fences.
+
+Branch: ${BRANCH}
+Recent commit subjects (match their style where sensible):
+${RECENT}
+
+Diff stat:
+${STAT}
+
+Staged diff:
+${DIFF}
+${NOTE}
+EOF
+
+jq -n --rawfile p "$TMP/prompt.txt" '{contents:[{parts:[{text:$p}]}]}' > "$TMP/body.json" || exit 0
+
+# --- Call Gemini (key goes via stdin config so it never shows up in `ps`) --
+RESPONSE="$(printf 'header = "x-goog-api-key: %s"\n' "$GEMINI_API_KEY" |
+  curl -sS --max-time "$TIMEOUT" -K - \
+    -H 'Content-Type: application/json' \
+    -d @"$TMP/body.json" "$API_URL" 2>"$TMP/curl.err")"
+
+MSG="$(printf '%s' "$RESPONSE" |
+  jq -r '[.candidates[0].content.parts[]? | .text // empty] | join("")' 2>/dev/null)"
+
+if [ -z "$MSG" ]; then
+  ERR="$(printf '%s' "$RESPONSE" | jq -r '.error.message // empty' 2>/dev/null)"
+  [ -n "$ERR" ] || ERR="$(cat "$TMP/curl.err" 2>/dev/null)"
+  warn "no message generated${ERR:+: $ERR}"
+  exit 0
+fi
+
+# Strip stray code fences and leading blank lines
+MSG="$(printf '%s\n' "$MSG" | sed -e '/^```/d' -e '/./,$!d')"
+
+# --- Prepend draft; keep git's own comment block below it ------------------
+{ printf '%s\n\n' "$MSG"; cat "$COMMIT_MSG_FILE"; } > "$TMP/new_msg" &&
+  cat "$TMP/new_msg" > "$COMMIT_MSG_FILE"
+
+exit 0

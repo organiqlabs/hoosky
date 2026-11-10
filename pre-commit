@@ -11,6 +11,8 @@ COMMIT_SOURCE="${2:-}"
 MODEL="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
 MAX_DIFF_CHARS="${GEMINI_MAX_DIFF_CHARS:-30000}"
 TIMEOUT="${GEMINI_TIMEOUT:-20}"
+case "$MAX_DIFF_CHARS" in ''|*[!0-9]*) MAX_DIFF_CHARS=30000 ;; esac
+case "$TIMEOUT" in ''|*[!0-9]*) TIMEOUT=20 ;; esac
 API_URL="https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent"
 
 warn() { printf 'ai-commit: %s\n' "$*" >&2; }
@@ -39,8 +41,11 @@ FULL_DIFF="$(git diff --cached --no-color --unified=2 -- . "${EXCLUDES[@]}")"
 NOTE=""
 DIFF="$FULL_DIFF"
 if [ "${#FULL_DIFF}" -gt "$MAX_DIFF_CHARS" ]; then
-  DIFF="${FULL_DIFF:0:$MAX_DIFF_CHARS}"
-  NOTE="(Diff truncated to the first ${MAX_DIFF_CHARS} characters.)"
+  CUT="${FULL_DIFF:0:$MAX_DIFF_CHARS}"
+  TRIMMED="${CUT%"${CUT##*$'\n'}"}"   # keep only complete lines
+  [ -n "$TRIMMED" ] && CUT="$TRIMMED" # no newline in cut: keep raw slice
+  DIFF="$CUT"
+  NOTE="(Diff truncated to the first ${MAX_DIFF_CHARS} characters; cut at a line boundary.)"
 fi
 
 STAT="$(git diff --cached --stat --no-color -- . "${EXCLUDES[@]}")"

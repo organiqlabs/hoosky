@@ -15,14 +15,16 @@ Don't invent toolchain commands.
 ## Behavior contract (preserve when editing)
 
 - Never blocks a commit: all failure paths warn on stderr and `exit 0`. `set -u` only, no `set -e`.
-- No-op when: `GEMINI_API_KEY` unset; `curl`/`jq`/`git` missing; staged diff empty;
+- No-op when: `GEMINI_API_KEY` unset or contains characters unsafe for the curl config
+  (`"`, `\`, CR, LF); `curl`/`jq`/`git` missing; staged diff empty;
   commit source is `message|merge|squash|commit` (i.e. `-m`, merge, squash, amend);
   or the message file already has non-comment content.
 - `SKIP_AI_COMMIT=1` bypasses entirely.
 - Diff excludes lockfiles, `*.min.js`, `.env*`, `*.pem`, `*.key` — keep the secret exclusions intact.
 - API key goes to curl via `-K -` on stdin, never argv (keeps it out of `ps`). Don't "simplify" this.
-- Diff truncates to `GEMINI_MAX_DIFF_CHARS` (default 30000) before sending; `GEMINI_MODEL`
-  default `gemini-3.5-flash-lite`; `GEMINI_TIMEOUT` default 20s.
+- Diff truncates to `GEMINI_MAX_DIFF_CHARS` (default 30000) before sending, cut at a
+  line boundary; `GEMINI_MODEL` default `gemini-3.5-flash-lite`; `GEMINI_TIMEOUT`
+  default 20s. Non-numeric `GEMINI_MAX_DIFF_CHARS`/`GEMINI_TIMEOUT` fall back to defaults.
 - Output: Conventional Commits, subject ≤72 chars, body wrapped at 72; strips code fences;
   prepends the draft above git's existing comment block.
 

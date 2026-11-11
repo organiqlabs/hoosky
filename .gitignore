@@ -7,3 +7,9 @@
 # This only covers non-standard message-file locations in the worktree, and it is
 # overbroad by design (hides any *.ai-commit.*), so keep it.
 *.ai-commit.*
+
+# hoosky installer artifacts: backups of a pre-existing unmanaged hook, and
+# uninstalled copies. Same dir as the hook file, which is inside the worktree
+# only when a repo sets hooksPath inside it.
+prepare-commit-msg.bak.*
+prepare-commit-msg.uninstalled.*

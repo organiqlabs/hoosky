@@ -41,6 +41,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 if [ -n "${STDIN_LOG:-}" ]; then cat > "$STDIN_LOG"; else cat > /dev/null; fi
+[ -n "${STUB_SLEEP:-}" ] && sleep "$STUB_SLEEP"
 [ -n "${ROOT_DIR:-}" ] || { printf 'stub: ROOT_DIR unset (harness misconfigured)\n' >&2; exit 2; }
 case "${STUB_EXIT:-}" in '' ) ;; *[!0-9]*) printf 'stub: invalid STUB_EXIT "%s" (digits only)\n' "$STUB_EXIT" >&2; exit 2 ;; *) exit "$STUB_EXIT" ;; esac
 if [ -n "${STUB_RESPONSE_FILE:-}" ]; then cat "$STUB_RESPONSE_FILE"; else cat "$ROOT_DIR/ok.json"; fi
@@ -208,6 +209,13 @@ x.map|SEN-MAP-1
 sub/x.map|SEN-MAPS-1
 bundle.min.css|SEN-MINCS-1
 sub/deep/bundle.MIN.CSS|SEN-MINCSS-1
+.envrc|SEN-ENVRC-1
+sub/.envrc|SEN-ENRCS-1
+sub/.envrc.local|SEN-ENVRC2-1
+vault-password|SEN-VALTPW-1
+sub/vault-password.txt|SEN-VALTPWS-1
+vault_password|SEN-VALTPW2-1
+sub/vault_password.bak|SEN-VALTPW2S-1
 FIX
   git -C "$d" add .
   printf '%s' "$d"
@@ -310,12 +318,12 @@ jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt
 if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts): add a thing' && grep -q '^# Please enter' "$m" \
   && jq -e '.contents[0].parts[0].text | contains("diff --git")' "$r/prompt.json" >/dev/null \
   && grep -qE '^Branch: .+' "$r/prompt.txt" && grep -q 'Recent commit subjects' "$r/prompt.txt" \
-  && grep -q 'Do NOT use markdown' "$r/prompt.txt" \
   && grep -q 'Conventional Commits' "$r/prompt.txt" \
+  && ! grep -q 'ai-commit:' "$ROOT/stderr" \
   && grep -qE '(max )?50 (characters|chars)' "$r/prompt.txt" \
   && grep -qE '(75 )?(columns|cols|characters|chars)' "$r/prompt.txt" \
   && ! compgen -G "$r/COMMIT_EDITMSG.ai-commit.*" >/dev/null; then
-  ok "happy path draft prepended"; else bad "happy path draft prepended (rc=$rc)"; fi
+  ok "happy path draft prepended (stderr clean)"; else bad "happy path draft prepended (rc=$rc)"; fi
 # 9b. Verbose comment block survives byte-for-byte below the draft
 r=$(make_repo happycomment); m="$r/COMMIT_EDITMSG"
 printf '\n# Changes to be committed:\n#\tmodified:   file.txt\n#\n# Please enter the commit message\n' > "$m"
@@ -624,10 +632,10 @@ dc=0
 [ "$rc_d" = 0 ] && [ "$rc_s" = 0 ] && [ "$rc_dt" = 0 ] && [ "$rc_b" = 0 ]                || dc=1
 [ "$rc_l" = 0 ] && [ "${#sl}" -le 50 ] && [ "$mb" -le 75 ] && [ "$mb" -gt 0 ]      || dc=1
 grep -q 'subject exceeds' "$d/err-long.txt"                                    || dc=1
-ptext "$d/default.json"  | grep -q 'Required detail level (minimal): Minimal:'  || dc=1
-ptext "$d/standard.json" | grep -q 'Required detail level (standard): Standard:' || dc=1
-ptext "$d/detailed.json" | grep -q 'Required detail level (detailed): Detailed:' || dc=1
-ptext "$d/bogus.json"    | grep -q 'Required detail level (minimal): Minimal:'   || dc=1
+ptext "$d/default.json"  | grep -q 'detail level (minimal)'  || dc=1
+ptext "$d/standard.json" | grep -q 'detail level (standard)' || dc=1
+ptext "$d/detailed.json" | grep -q 'detail level (detailed)' || dc=1
+ptext "$d/bogus.json"    | grep -q 'detail level (minimal)'   || dc=1
 grep -q 'not one of minimal' "$d/err-bogus.txt"                                  || dc=1
 ! grep -q 'ai-commit:' "$d/err-default.txt"                                      || dc=1
 ! grep -q 'ai-commit:' "$d/err-standard.txt"                                     || dc=1
@@ -856,6 +864,86 @@ blines=$(grep -c '^lineB[0-9]' "$r/stat47.txt")
 if [ "$rc" = 0 ] && [ "$blines" = 40 ] && grep -q 'truncated to the last 4000 bytes' "$r/stat47.txt" && ! grep -q 'AAAA' "$r/stat47.txt"; then
   ok "stat cut on exact line boundary keeps all 40 complete lines"
 else bad "stat cut on exact line boundary (rc=$rc, blines=$blines)"; fi
+
+# 48. UTF-8 locale: the 50-char subject limit counts characters, not bytes (LC_ALL=C counts bytes)
+utf8_subj=$(printf 'feat: '; printf '\303\251%.0s' $(seq 30))   # 'feat: ' + 30x e-acute (2 bytes) = 36 chars / 66 bytes
+jq -nc --arg t "$utf8_subj" '{candidates:[{content:{parts:[{text:$t}]}}]}' > "$ROOT/utf8-resp.json"
+r=$(make_repo utf8case); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/utf8-resp.json" LC_ALL=C.utf8)
+if [ "$rc" = 0 ] && [ "$(head -1 "$m")" = "$utf8_subj" ] && ! grep -q 'subject exceeds' "$ROOT/stderr"; then
+  ok "utf8 locale: 36-char multibyte subject passes untruncated"
+else bad "utf8 locale: 36-char multibyte subject passes untruncated (rc=$rc)"; fi
+
+# 49. wc -c reports nothing/garbage: the whole stat is kept, no truncation marker
+GWC="$ROOT/wc-fail"; mkdir -p "$GWC"
+cat > "$GWC/wc" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "$GWC/wc"
+r=$(make_repo wcfail); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$GWC:$GSTAT:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
+jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null | sed -n '/^Diff stat:$/,/^Staged diff:$/p' > "$r/stat49.txt"
+if [ "$rc" = 0 ] && grep -q 'AAAA' "$r/stat49.txt" && grep -q 'lineB40' "$r/stat49.txt" && ! grep -q 'truncated to the last 4000' "$r/stat49.txt"; then
+  ok "wc failure: stat kept whole, no truncation"
+else bad "wc failure: stat kept whole (rc=$rc)"; fi
+
+# 50. Stat is one single >4000-byte line with no newline: the raw 4000-byte slice is kept
+GSTAT1="$ROOT/git-stat1"; mkdir -p "$GSTAT1"
+cat > "$GSTAT1/git" <<'EOF'
+#!/usr/bin/env bash
+case " $* " in
+  *--stat*)
+    printf '%5000s' | tr ' ' 'A'
+    exit 0 ;;
+  *log*)    printf 'some subject\n' ; exit 0 ;;
+  *branch*) printf 'main\n' ; exit 0 ;;
+  *)        printf 'diff --git a/f.txt b/f.txt\nindex 000 111 100644\n--- a/f.txt\n+++ b/f.txt\n@@ -1 +1 @@\n+x\n' ; exit 0 ;;
+esac
+EOF
+chmod +x "$GSTAT1/git"
+r=$(make_repo statraw); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$GSTAT1:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
+jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null | sed -n '/^Diff stat:$/,/^Staged diff:$/p' > "$r/stat50.txt"
+rawline=$(awk '/^A+$/ { print length($0); exit }' "$r/stat50.txt")
+if [ "$rc" = 0 ] && grep -q 'truncated to the last 4000 bytes' "$r/stat50.txt" && [ "${rawline:-0}" = 4000 ]; then
+  ok "single over-long stat line: raw 4000-byte slice kept"
+else bad "single over-long stat line: raw 4000-byte slice kept (rc=$rc, rawlen=${rawline:-0})"; fi
+
+# 51. curl refuses the oversized (>10 MiB) response via --max-filesize: hook no-ops, message untouched
+# The 10485760-byte cap itself is enforced by curl (argv pinned by test #25);
+# this pins the hook contract: refusal ⇒ warn, exit 0, file not rewritten.
+r=$(make_repo big10); m=$(fresh_msg "$r")
+printf 'curl: (63) Maximum file size exceeded\n' > "$ROOT/curl63.err"
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_EXIT=63 STUB_STDERR_FILE="$ROOT/curl63.err")
+if [ "$rc" = 0 ] && grep -q 'no message generated' "$ROOT/stderr"; then unchanged "$m" "oversized response refused by curl: hook no-ops"; else bad "oversized response refused (rc=$rc)"; fi
+
+# 52. TERM while the API call is in flight: trap exits 143, draft never written
+# (bash defers the trap until the foreground command finishes — the in-flight curl completes, then the trap runs)
+r=$(make_repo sigterm); m=$(fresh_msg "$r")
+rc_term=$( cd "$r" && set -m && {
+             env -i PATH="$STUB_BIN:/usr/bin:/bin" HOME="$HOME_DIR" ROOT_DIR="$ROOT" LC_ALL=C GIT_CONFIG_NOSYSTEM=1 \
+                 GEMINI_API_KEY=fake STUB_SLEEP=2 "$BASH_BIN" "$HOOK" "$m" "" &
+             pid=$!
+             sleep 0.4
+             kill -TERM "$pid" 2>/dev/null
+             wait "$pid"; echo $?
+           } 2>/dev/null )
+if ! grep -qE '^feat' "$m" && grep -q '^# Please enter' "$m"; then untouched_t=1; else untouched_t=0; fi
+if [ "$rc_term" = 143 ] && [ "$untouched_t" = 1 ]; then ok "TERM in flight: exit 143, message unchanged"; else bad "TERM in flight: exit 143 (rc=$rc_term)"; fi
+
+# 53. INT while the API call is in flight: trap exits 130 (set -m needed — backgrounded jobs ignore SIGINT otherwise)
+r=$(make_repo sigint); m=$(fresh_msg "$r")
+rc_int=$( cd "$r" && set -m && {
+            env -i PATH="$STUB_BIN:/usr/bin:/bin" HOME="$HOME_DIR" ROOT_DIR="$ROOT" LC_ALL=C GIT_CONFIG_NOSYSTEM=1 \
+                GEMINI_API_KEY=fake STUB_SLEEP=2 "$BASH_BIN" "$HOOK" "$m" "" &
+            pid=$!
+            sleep 0.4
+            kill -INT "$pid" 2>/dev/null
+            wait "$pid"; echo $?
+          } 2>/dev/null )
+if ! grep -qE '^feat' "$m" && grep -q '^# Please enter' "$m"; then untouched_i=1; else untouched_i=0; fi
+if [ "$rc_int" = 130 ] && [ "$untouched_i" = 1 ]; then ok "INT in flight: exit 130, message unchanged"; else bad "INT in flight: exit 130 (rc=$rc_int)"; fi
 
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"

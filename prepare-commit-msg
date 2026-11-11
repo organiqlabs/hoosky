@@ -76,7 +76,7 @@ wrap_text() {
 [ -n "$COMMIT_MSG_FILE" ] || exit 0
 [ "${SKIP_AI_COMMIT:-0}" = "1" ] && exit 0
 case "$COMMIT_SOURCE" in message|merge|squash|commit) exit 0 ;; esac  # -m, merge, squash, amend/-c/-C
-[ -r "$COMMIT_MSG_FILE" ] && [ ! -d "$COMMIT_MSG_FILE" ] && [ ! -p "$COMMIT_MSG_FILE" ] || { warn "message file '$COMMIT_MSG_FILE' not readable (missing, directory, fifo, or no permission); skipping"; exit 0; }
+[ -r "$COMMIT_MSG_FILE" ] && [ -f "$COMMIT_MSG_FILE" ] || { warn "message file '$COMMIT_MSG_FILE' not readable (missing, not a regular file, or no permission); skipping"; exit 0; }
 
 for cmd in curl jq git grep sed tr; do
   command -v "$cmd" >/dev/null 2>&1 || { warn "'$cmd' not found; skipping"; exit 0; }

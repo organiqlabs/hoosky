@@ -21,6 +21,9 @@ modes: `--dir PATH` (one repo at PATH; repeatable), `--all ~/src` (every repo un
 `--global` (explicit form of the default), `--uninstall` (removes only if it matches the
 published checksum; add `--force` to override). The installer verifies the downloaded hook
 against `checksums.txt` from the same tag and refuses to install unverified code.
+Note: when `core.hooksPath` is set anywhere (global or repo-local), `--dir`/`--all` install
+into the hooks directory git resolves for those repos — possibly a shared global directory —
+not `.git/hooks`.
 Then verify:
 
 ```sh
@@ -95,10 +98,11 @@ are not part of the payload, and the API key is never exposed in `ps` output.
 ```sh
 bash -n prepare-commit-msg        # syntax check
 bash -n install.sh                # syntax check (installer)
-bash prepare-commit-msg.test.sh   # full suite; stubs curl, never touches the network
+bash prepare-commit-msg.test.sh   # hook suite; stubs curl, never touches the network
+bash install.test.sh              # installer suite; stubs curl, sandboxes HOME and git config
 ```
 
-Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; plus required standard userland — `tr`/`sed`/`wc`/`tail`/`head`/`dirname`/`cat`/`mktemp`/`mv`/`chmod`/`rm`; unguarded tools degrade silently). No build, no CI, no manifest.
+Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; plus required standard userland — `tr`/`sed`/`wc`/`tail`/`head`/`dirname`/`cat`/`mktemp`/`mv`/`chmod`/`rm`; unguarded tools degrade silently). The diff-stat cap additionally relies on GNU `head -c` / `tail -c` — on BSD/macOS the stat silently degrades to empty unless coreutils is installed (`brew install coreutils`, then `ghead`/`gtail`). No build, no CI, no manifest.
 Repo conventions for agents: [AGENTS.md](AGENTS.md).
 
 ## License

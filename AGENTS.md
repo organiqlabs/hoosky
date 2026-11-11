@@ -8,8 +8,8 @@ don't implement them without asking), `.gitignore`, `.gitattributes`, `LICENSE` 
 directory — sets `core.hooksPath` to `~/.config/git/hooks` globally after a successful
 global install when unset; `--dir`/`--all` target specific repos; `--global` is the
 explicit form of the default) and `checksums.txt` (published sha256 of the hook and
-itself, read from the tag at install time; regenerate the `install.sh` line with
-`sha256sum install.sh` after any installer edit). Git repo, branch `main`; no manifest, CI,
+itself, read from the tag at install time; regenerate after any edit to `prepare-commit-msg`
+or `install.sh` with `sha256sum prepare-commit-msg install.sh > checksums.txt`). Git repo, branch `main`; no manifest, CI,
 or build. Don't invent toolchain commands. This repo is published as
 `organiqlabs/hoosky` — `install.sh` downloads the `v1.0.0` tag, not the worktree.
 
@@ -17,9 +17,11 @@ or build. Don't invent toolchain commands. This repo is published as
 
 - The file is named `prepare-commit-msg`; install it as Git's `prepare-commit-msg` hook:
   `install -m755 prepare-commit-msg /path/to/repo/.git/hooks/prepare-commit-msg`.
-  This repo has it installed at `.git/hooks/prepare-commit-msg` for dogfooding, so commits
-  here fire the hook when `GEMINI_API_KEY` is set. Refresh it after hook changes:
-  `install -m755 prepare-commit-msg .git/hooks/prepare-commit-msg`.
+  Dogfooding: `core.hooksPath` set anywhere (e.g. the installer's own global default,
+  `~/.config/git/hooks`) shadows `$GIT_DIR/hooks` entirely — a repo-local copy then never
+  runs. On hooksPath machines, dogfood by refreshing the hooksPath-resolved copy instead:
+  `install -m755 prepare-commit-msg "$(git rev-parse --git-path hooks)/prepare-commit-msg"`
+  (`--git-path hooks` resolves correctly either way).
 - Not the pre-commit framework (pre-commit.com): no `.pre-commit-config.yaml`, no Python
   dep, no pip. Don't look for framework config here.
 - Not the same as `../hooks/` (sibling Bun/TypeScript project, organiqbit-hooks, with
@@ -85,3 +87,6 @@ or build. Don't invent toolchain commands. This repo is published as
   sort, ln, chmod, mktemp, cmp, sha1sum, mkfifo, id, env, cp, dirname, cat, head, tail);
   the `awk`/`cmp`/`sha1sum` are not coreutils. Stubs `curl` in scratch PATHs, never touches
   the network; runs in temp git repos with `GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null`.
+- `bash -n install.sh` and `bash install.test.sh` — installer suite; stubs `curl` the same
+  way and sandboxes `HOME`/`GIT_CONFIG_GLOBAL` per case, so it never touches the real home
+  or this machine's global git config.

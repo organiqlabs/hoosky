@@ -27,6 +27,9 @@ usage: install.sh [options]
   --force          overwrite an unmanaged hook, or uninstall without the checksum match
   --help           this text
 
+Note: when core.hooksPath is set anywhere (global or local), --dir/--all install into the
+hooks directory git resolves for those repos (possibly a shared global dir), not .git/hooks.
+
 Examples:
   curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash
   curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash -s -- --global
@@ -66,7 +69,7 @@ done
 # Print the deduplicated list of repo roots to act on (--dir/--all targets only).
 discover_repos() {
   if [ ${#DIRS[@]} -gt 0 ]; then
-    printf '%s\n' "${DIRS[@]}"
+    printf '%s\n' "${DIRS[@]}" | sort -u
     return
   fi
   { git -C "$ALL_ROOT" rev-parse --show-toplevel 2>/dev/null;
@@ -93,14 +96,14 @@ expand_hooks_path() {
 # after a successful global install (see global_post_action), so a failed
 # install never hijacks repos that rely on $GIT_DIR/hooks.
 global_hooks_dir() {
-  local hp xdg
+  local hp expanded xdg
   hp="$(git config --global core.hooksPath 2>/dev/null)" || hp=""
   if [ -n "$hp" ]; then
-    if ! hp="$(expand_hooks_path "$hp")"; then
+    if ! expanded="$(expand_hooks_path "$hp")"; then
       err "global core.hooksPath '$hp' is relative; git resolves it relative to each repo's hook working directory, so there is no single directory hoosky can install into. Set an absolute path (e.g. git config --global core.hooksPath \"\$HOME/.config/git/hooks\") or pass --dir/--all."
       return 1
     fi
-    printf '%s\n' "$hp"
+    printf '%s\n' "$expanded"
     return 0
   fi
   if [ -n "${XDG_CONFIG_HOME:-}" ]; then
@@ -180,7 +183,7 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
     label="$target"
   fi
   dest="$hd/$HOOK_NAME"
-  before_ts="$(date +%Y%m%d%H%M%S)"
+  before_ts="$(date +%Y%m%d%H%M%S)-$$"
 
   if [ "$UNINSTALL" = 1 ]; then
     if [ ! -e "$dest" ]; then
@@ -195,7 +198,7 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
       err "$label: installed hook is not the hoosky hook (checksum differs); refusing without --force"
       return 1
     fi
-    mv "$dest" "$dest.uninstalled.$before_ts"
+    mv "$dest" "$dest.uninstalled.$before_ts" || { err "$label: could not move $dest aside; hook left in place"; return 1; }
     printf '%s\n' "$label: uninstalled (moved to $HOOK_NAME.uninstalled.$before_ts)"
     if [ "$kind" = global ]; then
       global_post_action "$hd" uninstall
@@ -207,7 +210,7 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
     if [ "$(file_sum "$dest")" = "$HOOK_SUM" ] && [ "$FORCE" != 1 ]; then
       printf '%s\n' "$label: already at $TAG; refreshing anyway"
     elif [ "$FORCE" = 1 ]; then
-      cp -a "$dest" "$dest.bak.$before_ts"
+      cp -a "$dest" "$dest.bak.$before_ts" || { err "$label: backup of $dest failed; refusing to overwrite"; return 1; }
       printf '%s\n' "$label: existing hook backed up to $HOOK_NAME.bak.$before_ts"
     else
       err "$label: $HOOK_NAME exists and is not hoosky; refusing to overwrite without --force (backup will be made)"
@@ -215,9 +218,9 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
     fi
   fi
 
-  mkdir -p "$hd"
-  cp -a "$TMPD/$HOOK_NAME" "$dest"
-  chmod 0755 "$dest"
+  mkdir -p "$hd" || { err "$label: cannot create hooks dir $hd"; return 1; }
+  cp -a "$TMPD/$HOOK_NAME" "$dest" || { err "$label: could not copy hook to $dest"; return 1; }
+  chmod 0755 "$dest" || { err "$label: chmod 0755 $dest failed; git ignores non-executable hooks"; return 1; }
   printf '%s\n' "$label: hoosky installed (hook: $dest)"
   if [ "$kind" = global ]; then
     global_post_action "$hd" install
@@ -231,13 +234,19 @@ if [ "$GLOBAL" = 1 ] || { [ ${#DIRS[@]} -eq 0 ] && [ -z "$ALL_ROOT" ]; }; then
   gh="$(global_hooks_dir)" || exit 1
   ( install_one global "$gh" ) || rc=1
 else
+  found=0
   while IFS= read -r repo; do
     case "$repo" in '') continue ;; esac
+    found=1
     ( install_one repo "$repo" ) || rc=1
   done < <(discover_repos)
+  if [ "$found" = 0 ]; then
+    err "no git repositories found${ALL_ROOT:+ under '$ALL_ROOT'}"
+    rc=1
+  fi
 fi
 
-if [ "$UNINSTALL" != 1 ]; then
+if [ "$UNINSTALL" != 1 ] && [ "$rc" = 0 ]; then
   cat <<'EOF'
 
 Next: export GEMINI_API_KEY=... and run `git commit` — the editor opens with an AI draft.

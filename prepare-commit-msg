@@ -93,9 +93,14 @@ case "$GEMINI_API_KEY" in
 esac
 
 # --- Collect context
+TMP="$(mktemp -d)" || { warn "mktemp -d failed; skipping"; exit 0; }
+SIBLING=""
+trap 'rm -rf "$TMP"; [ -z "$SIBLING" ] || rm -f "$SIBLING"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 # All patterns are `*`-prefixed so they match at any depth (root included) under git's
 # default pathspec magic; case-insensitive everywhere. Do not drop the leading `*`.
-EXCLUDES=(':(exclude,icase)*.env*' ':(exclude,icase)*.npmrc' ':(exclude,icase)*.pypirc' ':(exclude,icase)*.netrc'
+EXCLUDES=(':(exclude,icase)*.env' ':(exclude,icase)*.env.*' ':(exclude,icase)*.envrc*' ':(exclude,icase)*.npmrc' ':(exclude,icase)*.pypirc' ':(exclude,icase)*.netrc'
           ':(exclude,icase)*.git-credentials' ':(exclude,icase)*credentials*.json'
           ':(exclude,icase)*secrets.*'
           ':(exclude,icase)*id_rsa*' ':(exclude,icase)*id_dsa*' ':(exclude,icase)*id_ecdsa*' ':(exclude,icase)*id_ed25519*'
@@ -104,6 +109,11 @@ EXCLUDES=(':(exclude,icase)*.env*' ':(exclude,icase)*.npmrc' ':(exclude,icase)*.
           ':(exclude,icase)*.aws/credentials' ':(exclude,icase)*.m2/settings.xml' ':(exclude,icase)*.ppk'
           ':(exclude,icase)*.p12' ':(exclude,icase)*.pfx' ':(exclude,icase)*.jks' ':(exclude,icase)*.keystore'
           ':(exclude,icase)*.pem' ':(exclude,icase)*.key'
+          ':(exclude,icase)*.tfstate*' ':(exclude,icase)*.vault-token' ':(exclude,icase)*.vault_pass'
+          ':(exclude,icase)*vault-password*' ':(exclude,icase)*vault_password*' ':(exclude,icase)*.keytab'
+          ':(exclude,icase)*.p8' ':(exclude,icase)*.dockercfg' ':(exclude,icase)*.yarnrc*'
+          ':(exclude,icase)*_netrc' ':(exclude,icase)*.asc' ':(exclude,icase)*.gpg'
+          ':(exclude,icase)*.cargo/credentials*' ':(exclude,icase)*.gem/credentials'
           ':(exclude,icase)*.lock' ':(exclude,icase)*package-lock.json' ':(exclude,icase)*npm-shrinkwrap.json'
           ':(exclude,icase)*pnpm-lock.yaml' ':(exclude,icase)*bun.lockb'
           ':(exclude,icase)*.min.js' ':(exclude,icase)*.min.css' ':(exclude,icase)*.map')
@@ -126,23 +136,27 @@ if [ "${#FULL_DIFF}" -gt "$MAX_DIFF_CHARS" ]; then
 fi
 case "$DIFF" in *$'\n') ;; *) DIFF="$DIFF"$'\n' ;; esac
 
-STAT_FULL="$(git diff --no-ext-diff --no-textconv --cached --stat --no-color -- . "${EXCLUDES[@]}" 2>/dev/null)"
-STAT="$STAT_FULL"
 # cap at 4000 bytes, and only drop the (possibly partial) first line when we know a cut happened;
+# slice bytes from a temp file so trailing newlines don't shift the window arithmetic;
 # a single >4000-byte line with no newline would make the tail-line drop empty, so fall back to the raw slice
-stat_bytes="$(printf '%s' "$STAT_FULL" | wc -c)"
+git diff --no-ext-diff --no-textconv --cached --stat --no-color -- . "${EXCLUDES[@]}" > "$TMP/stat.txt" 2>/dev/null
+stat_bytes="$(wc -c < "$TMP/stat.txt")"
+case "$stat_bytes" in ''|*[!0-9]*) stat_bytes=0 ;; esac   # wc failed → treat as small, keep whole stat
 if [ "$stat_bytes" -gt 4000 ]; then
-  STAT="$(printf '%s' "$STAT_FULL" | tail -c 4000 | tail -n +2)"
-  [ -z "$STAT" ] && STAT="$(printf '%s' "$STAT_FULL" | tail -c 4000)"
+  before="$(head -c $((stat_bytes-4000)) "$TMP/stat.txt" | tail -c 1 | od -An -tx1 | tr -d ' \n')"
+  if [ "$before" = '0a' ]; then
+    STAT="$(tail -c 4000 "$TMP/stat.txt")"        # cut lands on a line boundary: first line complete
+  else
+    STAT="$(tail -c 4000 "$TMP/stat.txt" | tail -n +2)"   # partial first line dropped
+    [ -z "$STAT" ] && STAT="$(tail -c 4000 "$TMP/stat.txt")"
+  fi
+  STAT="(Diff stat truncated to the last 4000 bytes.)
+$STAT"
+else
+  STAT="$(cat "$TMP/stat.txt")"
 fi
 BRANCH="$(git branch --show-current 2>/dev/null)"
 RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
-
-TMP="$(mktemp -d)" || { warn "mktemp -d failed; skipping"; exit 0; }
-SIBLING=""
-trap 'rm -rf "$TMP"; [ -z "$SIBLING" ] || rm -f "$SIBLING"' EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
 # --- Build request
 # AUDIT WARNING: the heredoc below is UNQUOTED by design — ${BRANCH}, ${RECENT},
@@ -196,14 +210,14 @@ fi
 # via a hostile model response (echoing attacker-controlled diff content) and fire
 # as terminal escapes when the committer reads the log;
 # tabs are expanded so the wrap width counts visible columns consistently.
-MSG="$(printf '%s' "$MSG" | tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | sed -E -e '/^[`~]{3,}([A-Za-z0-9_.+#-]+)?[[:space:]]*$/d' -e '/./,$!d')"
+MSG="$(printf '%s' "$MSG" | tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | sed -E -e '/^[[:space:]]*[`~]{3,}([A-Za-z0-9_.+#-]+)?[[:space:]]*$/d' -e '/[^[:space:]]/,$!d')"
 [ -n "$MSG" ] || { warn "response contained only formatting noise; skipping"; exit 0; }
 
 # --- Normalize the final format: subject limit + body wrap (configurable)
 SUBJ="${MSG%%$'\n'*}"
 REM="${MSG#"$SUBJ"}"
 BODY="${REM#$'\n'}"
-BODY="$(printf '%s' "$BODY" | sed -e '/./,$!d')"   # collapse leading blank lines
+BODY="$(printf '%s' "$BODY" | sed -e '/[^[:space:]]/,$!d')"   # collapse leading blank lines
 if [ "${#SUBJ}" -gt "$MAX_SUBJECT_CHARS" ]; then
   CUT="${SUBJ:0:$MAX_SUBJECT_CHARS}"
   TRIMMED="${CUT% *}"             # cut back to the last word boundary

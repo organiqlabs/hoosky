@@ -25,7 +25,10 @@ git commit                  # editor opens pre-filled with an AI draft
 SKIP_AI_COMMIT=1 git commit # bypass entirely
 ```
 
-Set `GEMINI_API_KEY` first. On the warning paths — missing `curl`/`jq`/`git`/`grep`/`sed`/`tr`, an unparseable or oversized API response, an unsafe or unset key — the hook prints a one-line reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=1`, `-m`/merge/squash/amend, a message file that already has content, or an empty staged diff it exits 0 silently. Either way, the commit behaves exactly as if the hook weren't installed.
+Set `GEMINI_API_KEY` first. On the warning paths — e.g. a missing tool, an unreadable or
+fifo message file, an unparseable or oversized API response, an unwritable message directory,
+a backend tool failure (mktemp/jq/mv), an unsafe or unset key — the hook prints a one-line
+reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=1`, `-m`/merge/squash/amend, a message file that already has content, or an empty staged diff it exits 0 silently. Either way, the commit behaves exactly as if the hook weren't installed.
 
 | Variable                   | Default                 | Meaning                                             |
 | -------------------------- | ----------------------- | --------------------------------------------------- |
@@ -39,18 +42,22 @@ Set `GEMINI_API_KEY` first. On the warning paths — missing `curl`/`jq`/`git`/`
 
 Knob fallbacks: values that are non-numeric, zero-style (e.g. `00`), or oversized fall back to the
 default (`>15`-digit diff, `>2`-digit timeout, `>3`-digit subject/body). An invalid `GEMINI_MODEL`
-id warns and falls back to `gemini-3.5-flash-lite`. If the first 30000 characters of the diff contain
-no newline, the raw slice is used and the truncation note says so. API responses over 10 MiB are
-refused by curl.
+id warns and falls back to `gemini-3.5-flash-lite`. If the first `GEMINI_MAX_DIFF_CHARS` characters
+(default 30000) of the diff contain no newline, the raw slice is used and the truncation note says so. API responses over 10 MiB are refused by curl.
 
 Staged secret/credential material is excluded from the diff sent to the API, matched
-at any depth (root and nested), case-insensitively where applicable: `.env*` files,
-private keys and certificates (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
-`*.ppk`, SSH key material incl. `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`), cloud and tool
-credentials (`.aws/credentials`, `.m2/settings.xml`, `.npmrc`, `.netrc`, `.git-credentials`,
-`.pgpass`, `.htpasswd`, `.pypirc`, `*credentials*.json`, `*secrets.*`, Docker/Kubernetes config),
+at any depth (root and nested), case-insensitively: `.env`, `.env.*` and `.envrc`
+files, private keys and certificates (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
+`*.ppk`, `*.asc`, `*.gpg`, SSH key material incl. `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`), cloud and tool
+credentials (`.aws/credentials`, `.m2/settings.xml`, `.npmrc`, `.netrc`/`_netrc`, `.git-credentials`,
+`.pgpass`, `.htpasswd`, `.pypirc`, `*credentials*.json`, `*secrets.*`, Docker/Kubernetes config,
+`.dockercfg`, cargo/gem credentials), Terraform state (`*.tfstate*`), Vault material
+(`.vault-token`, `.vault_pass`, `*vault-password*`/`*vault_password*`), Kerberos keytabs (`*.keytab`),
+Apple keys (`*.p8`), yarnrc auth (`*.yarnrc*`),
 lockfiles (`*.lock`, `*package-lock.json`, `*pnpm-lock.yaml`, `*npm-shrinkwrap.json`, `*bun.lockb`),
-and minified assets (`*.min.js`, `*.min.css`, `*.map`). `.git` history and hook files
+and minified assets (`*.min.js`, `*.min.css`, `*.map`). The exclude list deliberately errs on the safe
+side: a legitimate file whose name matches an exclude pattern (e.g. `*secrets.*`) is kept out of
+the payload — that is intentional. `.git` history and hook files
 are not part of the payload, and the API key is never exposed in `ps` output.
 
 ## Development
@@ -60,7 +67,7 @@ bash -n prepare-commit-msg        # syntax check
 bash prepare-commit-msg.test.sh   # full suite; stubs curl, never touches the network
 ```
 
-Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; `tr`/`sed` are required POSIX tools). No build, no CI, no manifest.
+Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; plus required standard userland — `tr`/`sed`/`wc`/`tail`/`head`/`dirname`/`cat`/`mktemp`/`mv`/`chmod`/`rm`; unguarded tools degrade silently). No build, no CI, no manifest.
 Repo conventions for agents: [AGENTS.md](AGENTS.md).
 
 ## License

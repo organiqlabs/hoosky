@@ -1,9 +1,9 @@
 # AGENTS.md
 
 Standalone Gemini-backed commit-message drafting hook. Files: `prepare-commit-msg` (bash),
-`prepare-commit-msg.test.sh` (zero-dep harness), `README.md`, `ROADMAP.md` (pomona
+`prepare-commit-msg.test.sh` (POSIX-only harness), `README.md`, `ROADMAP.md` (pomona
 backlog — open P1–P3 items are worked down to zero; P4 holds parked decisions,
-don't implement them without asking). Git repo, branch `main`; no manifest, CI,
+don't implement them without asking), `.gitignore`, `.gitattributes`. Git repo, branch `main`; no manifest, CI,
 or build. Don't invent toolchain commands.
 
 ## Identity
@@ -32,18 +32,23 @@ or build. Don't invent toolchain commands.
   unsafe for the curl config (`"`, `\`, CR, LF); the response is unparseable, empty after
   fence-stripping, or over 10 MiB (`--max-filesize 10485760`).
 - Diff excludes (case-insensitive, matched at any depth — root and nested; `*`-prefixed
-  patterns apply everywhere): `.env*`, private-key/credential material (`*.pem`, `*.key`,
-  `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.ppk`, `*id_rsa*`, `*id_dsa*`, `*id_ecdsa*`,
+  patterns apply everywhere): `*.env`, `*.env.*`, `*.envrc*`, private-key/credential material (`*.pem`, `*.key`,
+  `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.ppk`, `*.asc`, `*.gpg`, `*id_rsa*`, `*id_dsa*`, `*id_ecdsa*`,
   `*id_ed25519*`, `*.aws/credentials`, `*.m2/settings.xml`), credential/config files
   (`*credentials*.json`, `*secrets.*`, `*.git-credentials`, `*.npmrc`, `*.pypirc`,
-  `*.netrc`, `*.pgpass`, `*.htpasswd`, `*.docker/config.json`, `*.kube/config`), and
+  `*.netrc`, `*_netrc`, `*.pgpass`, `*.htpasswd`, `*.docker/config.json`, `*.kube/config`,
+  `*.dockercfg`, `*.cargo/credentials*`, `*.gem/credentials`), Terraform/Vault/Kerberos/Apple material
+  (`*.tfstate*`, `*.vault-token`, `*.vault_pass`, `*vault-password*`, `*vault_password*`, `*.keytab`,
+  `*.p8`), yarnrc auth (`*.yarnrc*`), and
   lockfiles/minified assets (`*.lock`, `*package-lock.json`, `*pnpm-lock.yaml`,
   `*npm-shrinkwrap.json`, `*bun.lockb`, `*.min.js`, `*.min.css`, `*.map`).
-  Keep these intact — they exist so secrets never reach the API. `prepare-commit-msg.test.sh`
-  has sentinel matrix tests for them (`# 16`).
+  The deny-list errs on the safe side by design: a legitimate source file whose name matches an
+  exclude pattern (e.g. `*secrets.*`) is kept out of the payload; tightening it risks leaking a real
+  credential. Keep these intact — they exist so secrets never reach the API.
+  `prepare-commit-msg.test.sh` has sentinel matrix tests for them (`# 16`).
 - API key goes to curl via `-K -` on stdin, never argv (keeps it out of `ps`). Don't "simplify" this.
 - Diff truncates to `GEMINI_MAX_DIFF_CHARS` (default 30000, cut at a line boundary — or kept as a
-  raw slice with a different NOTE wording when the first 30000 chars contain no newline);
+  raw slice with a different NOTE wording when the first `GEMINI_MAX_DIFF_CHARS` characters contain no newline);
   `GEMINI_MODEL` default `gemini-3.5-flash-lite` (validated against `A-Za-z0-9._-`; anything else
   warns and falls back); `GEMINI_TIMEOUT` default 20s (over 2 digits ⇒ 20).
   Env-var fallback rules (all zero-style values such as `00` count as zero, which
@@ -51,7 +56,8 @@ or build. Don't invent toolchain commands.
   `GEMINI_TIMEOUT` non-numeric, ≤0, or >2 digits → 20; subject/body knobs below need
   ≤0, non-numeric, or >3 digits to fall back. `git diff` runs with `--no-ext-diff --no-textconv`
   so user config/textconv drivers can't alter or leak the payload; `--stat` is capped at
-  4000 bytes (byte-accurate `wc -c` precheck; a possibly partial first tail line is dropped on cut).
+  4000 bytes (byte-accurate `wc -c` precheck; a possibly partial first tail line is dropped on cut;
+  a single >4000-byte stat line with no newline is kept as the raw 4000-byte slice).
 - Output: Conventional Commits, subject ≤50 chars (`GEMINI_MAX_SUBJECT_CHARS`, cut at a
   word boundary) and body wrapped at 75 cols (`GEMINI_BODY_WRAP_CHARS`), both enforced after
   the API response — not merely requested in the prompt; non-numeric, ≤0 (incl. 00-style),
@@ -63,9 +69,12 @@ or build. Don't invent toolchain commands.
 
 ## Verify
 
-- Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; `tr`/`sed` are required POSIX tools).
+- Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; plus required standard userland:
+  `tr`, `sed`, `wc`, `tail`, `head`, `dirname`, `cat`, `mktemp`, `mv`, `chmod`, `rm` — the
+  unguarded ones degrade silently without blocking the commit).
 - `bash -n prepare-commit-msg`
 - `bash prepare-commit-msg.test.sh` — prints `all tests passed (N tests)` and exits 0 (or
-  `FAILURES (N tests)` and exits 1). Zero deps beyond git/jq and coreutils POSIX tools
-  (seq, sed, wc, tr, sort, ln, chmod, mktemp); stubs `curl` in scratch
-  PATHs, never touches the network; runs in temp git repos.
+  `FAILURES (N tests)` and exits 1). Deps: git/jq + POSIX tools (seq, awk, sed, wc, tr,
+  sort, ln, chmod, mktemp, cmp, sha1sum, mkfifo, id, env, cp, dirname, cat, head, tail);
+  the `awk`/`cmp`/`sha1sum` are not coreutils. Stubs `curl` in scratch PATHs, never touches
+  the network; runs in temp git repos with `GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null`.

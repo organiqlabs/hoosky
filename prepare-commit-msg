@@ -88,7 +88,7 @@ wrap_text() {
 case "$COMMIT_SOURCE" in message|merge|squash|commit) exit 0 ;; esac  # -m, merge, squash, amend/-c/-C
 [ -r "$COMMIT_MSG_FILE" ] && [ -f "$COMMIT_MSG_FILE" ] || { warn "message file '$COMMIT_MSG_FILE' not readable (missing, not a regular file, or no permission); skipping"; exit 0; }
 
-for cmd in curl jq git grep sed tr; do
+for cmd in curl jq git grep sed tr dirname tail cat; do
   command -v "$cmd" >/dev/null 2>&1 || { warn "'$cmd' not found; skipping"; exit 0; }
 done
 

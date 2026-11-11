@@ -36,7 +36,7 @@ or build. Don't invent toolchain commands. This repo is published as
   call); commit source is `message|merge|squash|commit` (i.e. `-m`, merge, squash, amend); the
   message file already has non-comment content; the staged diff is empty.
 - Warns and exits 0 (message/file untouched) when: the message file is not readable, a directory,
-  or a fifo; `curl`/`jq`/`git`/`grep`/`sed`/`tr` missing; `grep` cannot inspect the message file
+  or a fifo; `curl`/`jq`/`git`/`grep`/`sed`/`tr`/`dirname`/`tail`/`cat` missing; `grep` cannot inspect the message file
   (rc≥2); the message directory is not writable; `GEMINI_API_KEY` unset or contains characters
   unsafe for the curl config (`"`, `\`, CR, LF); the response is unparseable, empty after
   fence-stripping, or over 10 MiB (`--max-filesize 10485760`).

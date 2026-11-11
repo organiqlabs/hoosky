@@ -16,11 +16,6 @@
   - **Source**: sub-agent static scan
   - **Details**: git archive / source zips would include non-runtime files (harmless for curl-pipe). Decide on export-ignore entries and whether checksums.txt needs eol=lf (fetched raw, not via checkout). Parked decision, not a defect.
 
-- [ ] **Post-audit deferrals: C1 control strip, CJK display-width wrap, extended tool loop**
-  - **File**: `prepare-commit-msg`
-  - **Source**: this-cycle post-fix audits; explicitly deferred
-  - **Details**: (1) Strip C1 UTF-8 controls (0xC2 0x80-0x9F): requires GNU-specific sed or a new dependency; threat is corner-of-corner (hostile response to an API call made with the user own key; terminal escapes only when the committer runs git log); failure already degrades to warn+exit 0. (2) wrap_text counts characters, not display columns — CJK/wide chars under-fill; documented as inherent (LC_ALL=C semantics parked with the existing locale item). (3) Extending the tool-check loop to dirname/tail/cat/mktemp: unguarded-tool failures degrade without blocking the commit (some silently); tr/sed were added because the response path needs them unconditionally. Revisit only if a user reports harm.
-
 - [ ] **Hook: sibling chmod 0644 overrides umask — AI-drafted message world-readable until mv; decide keep/drop**
   - **File**: `prepare-commit-msg`
   - **Source**: sub-agent static scan
@@ -30,3 +25,8 @@
   - **File**: `prepare-commit-msg`
   - **Source**: sub-agent static scan
   - **Details**: ~15 lines could collapse into a validate_knob helper, but touches security-audited validation with subtle 00-style semantics; benefit marginal, tests green either way. Parked unless a user-facing bug appears.
+
+- [ ] **Post-audit deferrals: C1 control strip and CJK display-width wrap**
+  - **File**: `prepare-commit-msg`
+  - **Source**: this-cycle post-fix audits; explicitly deferred
+  - **Details**: (1) Strip C1 UTF-8 controls (0xC2 0x80-0x9F): no portable sed/awk supports the byte range; would need GNU sed or a new dependency; threat is corner-of-corner (hostile response to an API call made with the user own key; terminal escapes only when the committer runs git log); failure already degrades to warn+exit 0. (2) wrap_text counts characters, not display columns — CJK/wide chars under-fill; documented as inherent. Extended tool-check loop (dirname/tail/cat) was implemented separately. Revisit only if a user reports harm.

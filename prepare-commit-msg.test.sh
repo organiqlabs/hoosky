@@ -69,6 +69,33 @@ make_repo() {
   printf '%s' "$d"
 }
 
+# Repo with no commits at all: HEAD is unborn, so `git log` fails. Used to prove the
+# root-commit path (RECENT degrades to empty) still yields a callable payload.
+make_unborn_repo() {
+  local d="$ROOT/unborn-$1"; mkdir -p "$d"
+  git -C "$d" init -q
+  git -C "$d" config user.email test@example.com
+  git -C "$d" config user.name test
+  printf 'first\n' > "$d/file.txt"
+  git -C "$d" add file.txt
+  printf '%s' "$d"
+}
+
+# Repo on a detached HEAD (committed history, but no current branch). `git branch
+# --show-current` exits 0 with empty output there, so BRANCH must not render blank.
+make_detached_repo() {
+  local d="$ROOT/detached-$1"; mkdir -p "$d"
+  git -C "$d" init -q
+  git -C "$d" config user.email test@example.com
+  git -C "$d" config user.name test
+  printf 'base\n' > "$d/file.txt"
+  git -C "$d" add . && git -C "$d" commit -qm 'init'
+  git -C "$d" checkout -q --detach HEAD
+  printf 'change\n' >> "$d/file.txt"
+  git -C "$d" add file.txt
+  printf '%s' "$d"
+}
+
 # Repo whose staged file is a long line far bigger than the 400-char cut point.
 make_big_repo() {
   local d="$ROOT/big-$1"; mkdir -p "$d"
@@ -332,6 +359,55 @@ printf '# Changes to be committed:\n#\tmodified:   file.txt\n#\n# Please enter t
 awk '/^# Changes to be committed:/{p=1} p' "$m" > "$r/after-comments.txt"
 if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts)' && cmp -s "$r/expected-comments.txt" "$r/after-comments.txt"; then
   ok "verbose comment block preserved byte-for-byte below the draft"; else bad "verbose comment block preserved byte-for-byte below the draft (rc=$rc)"; fi
+
+# 9c. Root commit (unborn HEAD): `git log` exits nonzero, so RECENT must degrade to an
+# empty string while BRANCH still renders. Guards the `2>/dev/null || true` on the recent-
+# subjects capture — losing it would block the very first commit in a fresh repo.
+r=$(make_unborn_repo root); m=$(fresh_msg "$r")
+if git -C "$r" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+  bad "root commit fixture is unborn (precondition)"
+else
+  rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
+  jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt"
+  # The line right after the "Recent commit subjects" prompt must be empty: no subjects,
+  # no 'fatal:' text, no stray diagnostic from the failed git log.
+  next_line="$(awk '/^Recent commit subjects/{getline; print; exit}' "$r/prompt.txt")"
+  if [ "$rc" = 0 ] && [ -s "$r/prompt.json" ] \
+    && jq -e '.contents[0].parts[0].text | contains("diff --git")' "$r/prompt.json" >/dev/null \
+    && [ -z "$next_line" ] \
+    && ! grep -qiE 'fatal|does not have any commits|unknown revision' "$r/prompt.txt" \
+    && grep -qE '^Branch: .+' "$r/prompt.txt" \
+    && head -1 "$m" | grep -q '^feat(scripts)' \
+    && ! grep -q 'ai-commit:' "$ROOT/stderr"; then
+    ok "root commit (unborn HEAD): RECENT empty, BRANCH present, draft prepended"
+  else
+    bad "root commit (unborn HEAD): RECENT empty, BRANCH present (rc=$rc)"
+  fi
+fi
+
+# 9d. Detached HEAD: `git branch --show-current` succeeds with EMPTY output, so a bare
+# `Branch:` line would be spliced into the prompt. BRANCH must fall back to something
+# informative (short SHA) rather than blank or the literal placeholder 'HEAD'.
+r=$(make_detached_repo detach); m=$(fresh_msg "$r")
+if [ -n "$(git -C "$r" branch --show-current)" ]; then
+  bad "detached HEAD fixture is detached (precondition)"
+else
+  rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
+  jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt"
+  short_sha="$(git -C "$r" rev-parse --short HEAD 2>/dev/null)"
+  branch_line="$(grep -E '^Branch: ' "$r/prompt.txt")"
+  if [ "$rc" = 0 ] && [ -s "$r/prompt.json" ] \
+    && [ "$branch_line" = "Branch: detached at $short_sha" ] \
+    && ! grep -qE '^Branch: *$' "$r/prompt.txt" \
+    && ! grep -qx 'Branch: HEAD' "$r/prompt.txt" \
+    && jq -e '.contents[0].parts[0].text | contains("diff --git")' "$r/prompt.json" >/dev/null \
+    && head -1 "$m" | grep -q '^feat(scripts)' \
+    && ! grep -q 'ai-commit:' "$ROOT/stderr"; then
+    ok "detached HEAD: BRANCH falls back to short SHA (never blank)"
+  else
+    bad "detached HEAD: BRANCH falls back to short SHA (never blank) [got: '$branch_line']"
+  fi
+fi
 
 # 10. API error payload: warn (with API message), exit 0, file untouched
 printf '{"error":{"message":"bad key"}}' > "$ROOT/err.json"
@@ -956,6 +1032,25 @@ braces="$(printf '%s' "$heredoc" | grep -o '\${' | wc -l)"
 [ "$dollars" -eq "$braces" ] || hs_ok=0
 [ -n "$heredoc" ] || hs_ok=0
 if [ "$hs_ok" = 1 ]; then ok "prompt heredoc is shell-safe (no backticks/CR/bare \$)"; else bad "prompt heredoc is shell-safe (no backticks/CR/bare \$)"; fi
+
+# Root-commit guard, source-level: the recent-subjects capture must keep swallowing both the
+# nonzero exit and the 'fatal: ... does not have any commits yet' stderr from git log.
+if grep -qF "git log -5 --pretty=format:'%s' 2>/dev/null || true" "$HOOK"; then
+  ok "recent-subjects capture tolerates a failed git log (unborn HEAD)"
+else
+  bad "recent-subjects capture tolerates a failed git log (unborn HEAD)"
+fi
+
+# BRANCH must never be spliced in blank: detached HEAD (empty --show-current,
+# exit 0) needs the rev-parse/short-SHA fallback, and an unreadable repo must not
+# leave a dangling 'Branch:' with nothing after it.
+if grep -qF 'git rev-parse --abbrev-ref HEAD' "$HOOK" \
+  && grep -qF 'git rev-parse --short HEAD' "$HOOK" \
+  && grep -qF 'detached at ' "$HOOK"; then
+  ok "BRANCH detached-HEAD fallback present (abbrev-ref + short SHA)"
+else
+  bad "BRANCH detached-HEAD fallback present (abbrev-ref + short SHA)"
+fi
 
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"

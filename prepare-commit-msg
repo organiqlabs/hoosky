@@ -167,7 +167,18 @@ $STAT"
 else
   STAT="$(cat "$TMP/stat.txt")"
 fi
+# BRANCH: `git branch --show-current` prints nothing and exits 0 on a detached HEAD, which
+# would render a bare "Branch:" line. `rev-parse --abbrev-ref HEAD` yields the literal "HEAD"
+# there (and the branch name otherwise); rewrite that placeholder into a short SHA so the
+# model knows it is a detached checkout instead of seeing a blank or a misleading "HEAD".
 BRANCH="$(git branch --show-current 2>/dev/null)"
+if [ -z "$BRANCH" ]; then
+  BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  if [ -z "$BRANCH" ] || [ "$BRANCH" = HEAD ] || [ "$BRANCH" = '(detached)' ]; then
+    BRANCH="$(git rev-parse --short HEAD 2>/dev/null)"
+    [ -n "$BRANCH" ] && BRANCH="detached at $BRANCH"
+  fi
+fi
 RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 
 # --- Build request

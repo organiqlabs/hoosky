@@ -1,4 +1,6 @@
-# organiqbit/scripts
+# hoosky
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 One Gemini request drafts a Conventional Commits message from your staged diff and
 pre-fills the commit editor. It never blocks a commit: every failure path falls
@@ -8,8 +10,26 @@ back to the normal empty message. (Sole exception: Ctrl-C/kill aborts the commit
 ## Install
 
 ```sh
-install -m755 prepare-commit-msg /path/to/repo/.git/hooks/prepare-commit-msg
-test -x /path/to/repo/.git/hooks/prepare-commit-msg && echo hook-installed
+curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash
+```
+
+That installs the `prepare-commit-msg` hook into the git repository at your current
+directory. Other modes: `--all ~/src` (every repo under a root), `--dir PATH`
+(repeatable), `--uninstall` (removes only if it matches the published checksum; add
+`--force` to override). The installer verifies the downloaded hook against
+`checksums.txt` from the same tag and refuses to install unverified code.
+Then verify:
+
+```sh
+test -x "$(git rev-parse --git-path hooks)/prepare-commit-msg" && echo hook-installed
+```
+
+Prefer no curl-pipe? The manual equivalent:
+
+```sh
+curl -fsSL -o "$(git rev-parse --git-path hooks)/prepare-commit-msg" \
+  https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/prepare-commit-msg
+chmod 0755 "$(git rev-parse --git-path hooks)/prepare-commit-msg"
 ```
 
 The file is named `prepare-commit-msg`, and that's what it installs as — Git's
@@ -64,6 +84,7 @@ are not part of the payload, and the API key is never exposed in `ps` output.
 
 ```sh
 bash -n prepare-commit-msg        # syntax check
+bash -n install.sh                # syntax check (installer)
 bash prepare-commit-msg.test.sh   # full suite; stubs curl, never touches the network
 ```
 
@@ -72,4 +93,4 @@ Repo conventions for agents: [AGENTS.md](AGENTS.md).
 
 ## License
 
-None declared.
+[MIT](LICENSE). © 2026 Abdulwahab

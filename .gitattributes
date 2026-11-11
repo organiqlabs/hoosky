@@ -1,4 +1,5 @@
-# Keep the hook and harness LF-only on every clone — a CRLF-mangled bash shebang
-# fails on checkout on Windows with core.autocrlf=true.
+# Keep the hook, harness and installer LF-only on every clone — a CRLF-mangled
+# bash shebang fails on checkout on Windows with core.autocrlf=true.
 prepare-commit-msg text eol=lf
 prepare-commit-msg.test.sh text eol=lf
+install.sh text eol=lf

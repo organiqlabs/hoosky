@@ -3,8 +3,11 @@
 Standalone Gemini-backed commit-message drafting hook. Files: `prepare-commit-msg` (bash),
 `prepare-commit-msg.test.sh` (POSIX-only harness), `README.md`, `ROADMAP.md` (pomona
 backlog — open P1–P3 items are worked down to zero; P4 holds parked decisions,
-don't implement them without asking), `.gitignore`, `.gitattributes`. Git repo, branch `main`; no manifest, CI,
-or build. Don't invent toolchain commands.
+don't implement them without asking), `.gitignore`, `.gitattributes`, `LICENSE` (MIT),
+`install.sh` (curl installer for the hook) and `checksums.txt` (published sha256 of the
+hook and itself, read from the tag at install time). Git repo, branch `main`; no manifest, CI,
+or build. Don't invent toolchain commands. This repo is published as
+`organiqlabs/hoosky` — `install.sh` downloads the `v1.0.0` tag, not the worktree.
 
 ## Identity
 

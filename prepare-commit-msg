@@ -155,7 +155,7 @@ git diff --no-ext-diff --no-textconv --cached --stat --no-color -- . "${EXCLUDES
 stat_bytes="$(wc -c < "$TMP/stat.txt")"
 case "$stat_bytes" in ''|*[!0-9]*) stat_bytes=0 ;; esac   # wc failed → treat as small, keep whole stat
 if [ "$stat_bytes" -gt 4000 ]; then
-  before="$(head -c $((stat_bytes-4000)) "$TMP/stat.txt" | tail -c 1 | od -An -tx1 | tr -d ' \n')"
+  before="$(dd if="$TMP/stat.txt" bs=1 skip=$((stat_bytes-4001)) count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')"
   if [ "$before" = '0a' ]; then
     STAT="$(tail -c 4000 "$TMP/stat.txt")"        # cut lands on a line boundary: first line complete
   else

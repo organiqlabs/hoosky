@@ -4,11 +4,6 @@
 
 ## P3 — Worth doing, plan the split
 
-- [ ] **Make diff-stat cap portable to BSD/macOS head/tail**
-  - **File**: `prepare-commit-msg`
-  - **Source**: README documented limitation
-  - **Details**: stat_bytes slicing relies on GNU head -c/tail -c; on BSD these are byte-oriented differently or unavailable, degrading stat to empty. Replace with a POSIX-friendly slice (dd bs=1 or awk) so the cap works without coreutils.
-
 ## P4 — Parking lot (don't pick)
 
 - [ ] **Hook: FULL_DIFF captured fully in memory before 30000-char cut — streaming redesign park**

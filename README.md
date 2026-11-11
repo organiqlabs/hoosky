@@ -102,7 +102,7 @@ bash prepare-commit-msg.test.sh   # hook suite; stubs curl, never touches the ne
 bash install.test.sh              # installer suite; stubs curl, sandboxes HOME and git config
 ```
 
-Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; plus required standard userland — `tr`/`sed`/`wc`/`tail`/`head`/`dirname`/`cat`/`mktemp`/`mv`/`chmod`/`rm`; unguarded tools degrade silently). The diff-stat cap additionally relies on GNU `head -c` / `tail -c` — on BSD/macOS the stat silently degrades to empty unless coreutils is installed (`brew install coreutils`, then `ghead`/`gtail`). No build, no CI, no manifest.
+Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; plus required standard userland — `tr`/`sed`/`wc`/`tail`/`head`/`dirname`/`cat`/`mktemp`/`mv`/`chmod`/`rm`; unguarded tools degrade silently). The diff-stat cap uses `tail -c` and `dd` (POSIX) plus `od`/`wc`/`tr`, so it works on BSD/macOS without coreutils. No build, no CI, no manifest.
 Repo conventions for agents: [AGENTS.md](AGENTS.md).
 
 ## License

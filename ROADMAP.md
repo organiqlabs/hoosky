@@ -4,6 +4,21 @@
 
 ## P3 — Worth doing, plan the split
 
+- [ ] **Installer: sha256sum unavailable on macOS by default**
+  - **File**: `install.sh`
+  - **Source**: static scan
+  - **Details**: Installer requires sha256sum (not present on macOS without coreutils); published_sum/file_sum break on stock macOS. Add a shasum -a 256 fallback or document the coreutils prerequisite.
+
+- [ ] **Tests: --dir/--all with paths containing spaces**
+  - **File**: `install.test.sh`
+  - **Source**: test gap
+  - **Details**: discover_repos and install_one quote paths, but no test exercises spaces in repo paths. Add a case to lock in the quoting.
+
+- [ ] **Hook: test guarding prompt heredoc shell-safety**
+  - **File**: `prepare-commit-msg.test.sh`
+  - **Source**: test gap
+  - **Details**: The unquoted heredoc is audited by comment; add an automated grep-based test asserting no bare $, backticks, or CR in the static prompt text, so future edits cannot silently introduce expansion.
+
 ## P4 — Parking lot (don't pick)
 
 - [ ] **Locale-dependent slice/length semantics accepted (jq tolerates U+FFFD)**
@@ -31,7 +46,7 @@
   - **Source**: sub-agent static scan
   - **Details**: mktemp creates the sibling 0600, then chmod 0644 forces world-readable. Git's own COMMIT_EDITMSG is normally 0644 (& umask), so 0600 diverges; drop the chmod for privacy, or keep for git-parity. Needs a maintainer decision; parked.
 
-- [ ] _*Hook: knob-validation blocks duplicated 4-5 times across GEMINI_* knobs — dedup helper park_*
+- [ ] **Hook: knob-validation blocks duplicated 4-5 times across GEMINI\* knobs — dedup helper park**
   - **File**: `prepare-commit-msg`
   - **Source**: sub-agent static scan
   - **Details**: ~15 lines could collapse into a validate_knob helper, but touches security-audited validation with subtle 00-style semantics; benefit marginal, tests green either way. Parked unless a user-facing bug appears.

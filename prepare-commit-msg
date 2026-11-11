@@ -139,6 +139,8 @@ case "$DIFF" in *$'\n') ;; *) DIFF="$DIFF"$'\n' ;; esac
 # cap at 4000 bytes, and only drop the (possibly partial) first line when we know a cut happened;
 # slice bytes from a temp file so trailing newlines don't shift the window arithmetic;
 # a single >4000-byte line with no newline would make the tail-line drop empty, so fall back to the raw slice
+# stat capture is an unguarded tool: on failure stat.txt stays empty and STAT degrades to empty
+# (an accepted, non-blocking fallback, consistent with the unguarded-tool policy in AGENTS.md).
 git diff --no-ext-diff --no-textconv --cached --stat --no-color -- . "${EXCLUDES[@]}" > "$TMP/stat.txt" 2>/dev/null
 stat_bytes="$(wc -c < "$TMP/stat.txt")"
 case "$stat_bytes" in ''|*[!0-9]*) stat_bytes=0 ;; esac   # wc failed → treat as small, keep whole stat
@@ -235,7 +237,7 @@ fi
 # --- Prepend draft; atomic-ish write into the same directory as the msg file
 # mktemp template in the msg dir (same filesystem for mv; unpredictable name, no clobber)
 SIBLING="$(mktemp "${COMMIT_MSG_FILE}.ai-commit.XXXXXX" 2>/dev/null)" || { warn "could not create temp sibling for '$COMMIT_MSG_FILE'; skipping"; exit 0; }
-chmod 0644 "$SIBLING"
+chmod 0644 "$SIBLING" || { warn "could not chmod sibling temp file '$SIBLING'; skipping"; exit 0; }
 if { printf '%s\n\n' "$MSG"; cat "$COMMIT_MSG_FILE"; } > "$SIBLING" 2>/dev/null &&
   mv -f "$SIBLING" "$COMMIT_MSG_FILE"; then
   SIBLING=""

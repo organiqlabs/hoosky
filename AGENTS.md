@@ -67,8 +67,8 @@ or build. Don't invent toolchain commands. This repo is published as
   so user config/textconv drivers can't alter or leak the payload; `--stat` is capped at
   4000 bytes (byte-accurate `wc -c` precheck; a possibly partial first tail line is dropped on cut;
   a single >4000-byte stat line with no newline is kept as the raw 4000-byte slice).
-- Output: Conventional Commits, subject ≤50 chars (`GEMINI_MAX_SUBJECT_CHARS`, cut at a
-  word boundary) and body wrapped at 75 cols (`GEMINI_BODY_WRAP_CHARS`), both enforced after
+- Output: Conventional Commits, subject ≤60 chars (`GEMINI_MAX_SUBJECT_CHARS`, cut at a
+  word boundary) and body wrapped at 90 cols (`GEMINI_BODY_WRAP_CHARS`), both enforced after
   the API response — not merely requested in the prompt; non-numeric, ≤0 (incl. 00-style),
   or >3-digit values fall back to the defaults. Strips code fences; prepends the draft above git's
   existing comment block (written via same-dir temp file + `mv`).

@@ -320,8 +320,8 @@ if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts): add a thing' && grep
   && grep -qE '^Branch: .+' "$r/prompt.txt" && grep -q 'Recent commit subjects' "$r/prompt.txt" \
   && grep -q 'Conventional Commits' "$r/prompt.txt" \
   && ! grep -q 'ai-commit:' "$ROOT/stderr" \
-  && grep -qE '(max )?50 (characters|chars)' "$r/prompt.txt" \
-  && grep -qE '(75 )?(columns|cols|characters|chars)' "$r/prompt.txt" \
+  && grep -qE '(max )?60 (characters|chars)' "$r/prompt.txt" \
+  && grep -qE '(90 )?(columns|cols|characters|chars)' "$r/prompt.txt" \
   && ! compgen -G "$r/COMMIT_EDITMSG.ai-commit.*" >/dev/null; then
   ok "happy path draft prepended (stderr clean)"; else bad "happy path draft prepended (rc=$rc)"; fi
 # 9b. Verbose comment block survives byte-for-byte below the draft
@@ -429,7 +429,7 @@ rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY="$key" PATH="$STUB_BIN:/usr/bin:/bin" 
 if [ "$rc" = 0 ] && ! grep -qF "$key" "$r/argv.txt" && grep -qF "x-goog-api-key: $key" "$r/stdin.txt" && grep -q -- '-K' "$r/argv.txt"; then
   ok "api key travels via stdin config only"; else bad "api key travels via stdin config only (rc=$rc)"; fi
 
-# 21. Long subject truncated to 50 by default; long body wrapped to 75 cols
+# 21. Long subject truncated to 60 by default; long body wrapped to 90 cols
 cat > "$ROOT/longsubj.json" <<'JSON'
 {"candidates":[{"content":{"parts":[{"text":"feat(scripts): this subject line is deliberately far too long to fit within fifty characters\n\nThis body sentence is deliberately written to be far longer than seventy-five characters so the hook has to wrap it across multiple lines before writing the message file."}]}}]}
 JSON
@@ -442,11 +442,11 @@ while IFS= read -r line; do
   [ "${#line}" -gt "$max_body" ] && max_body="${#line}"
   body_lines=$((body_lines+1))
 done < <(tail -n +2 "$m")
-expected_subj='feat(scripts): this subject line is deliberately'
-if [ "$rc" = 0 ] && [ "$subject" = "$expected_subj" ] && grep -q 'subject exceeds 50 chars; truncated' "$ROOT/stderr" \
-  && [ "$max_body" -le 75 ] && [ "$body_lines" -ge 3 ]; then
-  ok "subject cut at word boundary to 50; truncation warned; body wrapped to 75"
-else bad "subject cut at word boundary to 50; truncation warned; body wrapped to 75 (rc=$rc, subj='$subject')"; fi
+expected_subj='feat(scripts): this subject line is deliberately far too'
+if [ "$rc" = 0 ] && [ "$subject" = "$expected_subj" ] && grep -q 'subject exceeds 60 chars; truncated' "$ROOT/stderr" \
+  && [ "$max_body" -le 90 ] && [ "$body_lines" -ge 2 ]; then
+  ok "subject cut at word boundary to 60; truncation warned; body wrapped to 90"
+else bad "subject cut at word boundary to 60; truncation warned; body wrapped to 90 (rc=$rc, subj='$subject')"; fi
 
 # 22. GEMINI_MAX_SUBJECT_CHARS=10 -> subject hard-cut to at most 10 chars
 r=$(make_repo subj10); m=$(fresh_msg "$r")
@@ -475,9 +475,9 @@ for v in abc 0 00 0000 99999 1000; do
   r=$(make_repo "badsubj-$v"); m=$(fresh_msg "$r")
   rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/longsubj.json" GEMINI_MAX_SUBJECT_CHARS="$v")
   s=$(head -1 "$m")
-  { [ "$rc" = 0 ] && [ -n "$s" ] && [ "${#s}" -le 50 ] && [ "${s#feat}" != "$s" ]; } || subj_fb=0
+  { [ "$rc" = 0 ] && [ -n "$s" ] && [ "${#s}" -le 60 ] && [ "${s#feat}" != "$s" ]; } || subj_fb=0
 done
-if [ "$subj_fb" = 1 ]; then ok "invalid MAX_SUBJECT_CHARS falls back to 50"; else bad "invalid MAX_SUBJECT_CHARS falls back to 50"; fi
+if [ "$subj_fb" = 1 ]; then ok "invalid MAX_SUBJECT_CHARS falls back to 60"; else bad "invalid MAX_SUBJECT_CHARS falls back to 60"; fi
 wrap_fb=1
 for v in abc 0 00 0000 99999 1000; do
   r=$(make_repo "badwrap-$v"); m=$(fresh_msg "$r")
@@ -487,9 +487,9 @@ for v in abc 0 00 0000 99999 1000; do
     case "$line" in \#*|'') continue ;; esac
     [ "${#line}" -gt "$mb" ] && mb="${#line}"
   done < <(tail -n +2 "$m")
-  { [ "$rc" = 0 ] && [ "$mb" -gt 0 ] && [ "$mb" -le 75 ]; } || wrap_fb=0
+  { [ "$rc" = 0 ] && [ "$mb" -gt 0 ] && [ "$mb" -le 90 ]; } || wrap_fb=0
 done
-if [ "$wrap_fb" = 1 ]; then ok "invalid BODY_WRAP_CHARS falls back to 75"; else bad "invalid BODY_WRAP_CHARS falls back to 75"; fi
+if [ "$wrap_fb" = 1 ]; then ok "invalid BODY_WRAP_CHARS falls back to 90"; else bad "invalid BODY_WRAP_CHARS falls back to 90"; fi
 
 # 25. Zero-bypass regression: 00-style values fall back to the defaults (argv-verified)
 r=$(make_repo zeros1); m=$(fresh_msg "$r")
@@ -506,7 +506,7 @@ while IFS= read -r line; do
   case "$line" in \#*|'') continue ;; esac
   [ "${#line}" -gt "$mb" ] && mb="${#line}"
 done < <(tail -n +2 "$m")
-if [ "$rc" = 0 ] && [ -n "$s" ] && [ "${#s}" -le 50 ] && [ "${s#feat}" != "$s" ] && [ "$mb" -le 75 ]; then
+if [ "$rc" = 0 ] && [ -n "$s" ] && [ "${#s}" -le 60 ] && [ "${s#feat}" != "$s" ] && [ "$mb" -le 90 ]; then
   ok "MAX_SUBJECT_CHARS=00 / BODY_WRAP_CHARS=00 fall back to defaults"; else bad "MAX_SUBJECT_CHARS=00 / BODY_WRAP_CHARS=00 fall back (rc=$rc)"; fi
 
 # 26. --no-ext-diff --no-textconv: repo-local diff drivers cannot rewrite the payload
@@ -618,7 +618,7 @@ cp "$ROOT/stderr" "$d/err-detailed.txt"
 r=$(make_repo detail-bogus); m=$(fresh_msg "$r")
 rc_b=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$d/bogus.json" GEMINI_DETAIL_LEVEL=bogus)
 cp "$ROOT/stderr" "$d/err-bogus.txt"
-# detailed tier must NOT loosen the 50-char subject / 75-col body enforcement
+# detailed tier must NOT loosen the 60-char subject / 90-col body enforcement
 cat > "$ROOT/longsubj-detail.json" <<'JSON'
 {"candidates":[{"content":{"parts":[{"text":"feat(scripts): an extremely long subject line that definitely exceeds the fifty character limit\n\nBody line which is deliberately made long in order to exceed the seventy five column wrap limit applied by the hook"}]}}]}
 JSON
@@ -630,7 +630,7 @@ while IFS= read -r line; do case "$line" in \#*|'') continue ;; esac; [ "${#line
 ptext() { jq -r '.contents[0].parts[0].text' "$1" 2>/dev/null; }
 dc=0
 [ "$rc_d" = 0 ] && [ "$rc_s" = 0 ] && [ "$rc_dt" = 0 ] && [ "$rc_b" = 0 ]                || dc=1
-[ "$rc_l" = 0 ] && [ "${#sl}" -le 50 ] && [ "$mb" -le 75 ] && [ "$mb" -gt 0 ]      || dc=1
+[ "$rc_l" = 0 ] && [ "${#sl}" -le 60 ] && [ "$mb" -le 90 ] && [ "$mb" -gt 0 ]      || dc=1
 grep -q 'subject exceeds' "$d/err-long.txt"                                    || dc=1
 ptext "$d/default.json"  | grep -q 'detail level (minimal)'  || dc=1
 ptext "$d/standard.json" | grep -q 'detail level (standard)' || dc=1
@@ -640,7 +640,7 @@ grep -q 'not one of minimal' "$d/err-bogus.txt"                                 
 ! grep -q 'ai-commit:' "$d/err-default.txt"                                      || dc=1
 ! grep -q 'ai-commit:' "$d/err-standard.txt"                                     || dc=1
 ! grep -q 'ai-commit:' "$d/err-detailed.txt"                                     || dc=1
-if [ "$dc" = 0 ]; then ok "GEMINI_DETAIL_LEVEL selects the tier (default minimal; bogus falls back; detailed obeys the 50/75 limits)"; else bad "GEMINI_DETAIL_LEVEL tier selection (dc=$dc)"; fi
+if [ "$dc" = 0 ]; then ok "GEMINI_DETAIL_LEVEL selects the tier (default minimal; bogus falls back; detailed obeys the 60/90 limits)"; else bad "GEMINI_DETAIL_LEVEL tier selection (dc=$dc)"; fi
 
 # 32. Opening fence with a language tag is stripped too (incl. c++/c#/f# tags)
 for tag in diff c++ c# f#; do
@@ -865,7 +865,7 @@ if [ "$rc" = 0 ] && [ "$blines" = 40 ] && grep -q 'truncated to the last 4000 by
   ok "stat cut on exact line boundary keeps all 40 complete lines"
 else bad "stat cut on exact line boundary (rc=$rc, blines=$blines)"; fi
 
-# 48. UTF-8 locale: the 50-char subject limit counts characters, not bytes (LC_ALL=C counts bytes)
+# 48. UTF-8 locale: the 60-char subject limit counts characters, not bytes (LC_ALL=C counts bytes)
 utf8_subj=$(printf 'feat: '; printf '\303\251%.0s' $(seq 30))   # 'feat: ' + 30x e-acute (2 bytes) = 36 chars / 66 bytes
 jq -nc --arg t "$utf8_subj" '{candidates:[{content:{parts:[{text:$t}]}}]}' > "$ROOT/utf8-resp.json"
 r=$(make_repo utf8case); m=$(fresh_msg "$r")

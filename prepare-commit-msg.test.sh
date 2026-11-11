@@ -945,6 +945,18 @@ rc_int=$( cd "$r" && set -m && {
 if ! grep -qE '^feat' "$m" && grep -q '^# Please enter' "$m"; then untouched_i=1; else untouched_i=0; fi
 if [ "$rc_int" = 130 ] && [ "$untouched_i" = 1 ]; then ok "INT in flight: exit 130, message unchanged"; else bad "INT in flight: exit 130 (rc=$rc_int)"; fi
 
+# Heredoc shell-safety: the unquoted prompt heredoc must contain no backticks, no CR,
+# and no bare $ (every $ must be an intended ${...} expansion).
+heredoc="$(awk '/^cat > "\$TMP\/prompt.txt" <<EOF$/{f=1;next} /^EOF$/{f=0} f' "$HOOK")"
+hs_ok=1
+if printf '%s' "$heredoc" | grep -q '`'; then hs_ok=0; fi
+if printf '%s' "$heredoc" | grep -q $'\r'; then hs_ok=0; fi
+dollars="$(printf '%s' "$heredoc" | grep -o '\$' | wc -l)"
+braces="$(printf '%s' "$heredoc" | grep -o '\${' | wc -l)"
+[ "$dollars" -eq "$braces" ] || hs_ok=0
+[ -n "$heredoc" ] || hs_ok=0
+if [ "$hs_ok" = 1 ]; then ok "prompt heredoc is shell-safe (no backticks/CR/bare \$)"; else bad "prompt heredoc is shell-safe (no backticks/CR/bare \$)"; fi
+
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"
 exit "$fail"

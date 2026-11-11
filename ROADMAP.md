@@ -4,16 +4,6 @@
 
 ## P3 — Worth doing, plan the split
 
-- [ ] **Tests: --dir/--all with paths containing spaces**
-  - **File**: `install.test.sh`
-  - **Source**: test gap
-  - **Details**: discover_repos and install_one quote paths, but no test exercises spaces in repo paths. Add a case to lock in the quoting.
-
-- [ ] **Hook: test guarding prompt heredoc shell-safety**
-  - **File**: `prepare-commit-msg.test.sh`
-  - **Source**: test gap
-  - **Details**: The unquoted heredoc is audited by comment; add an automated grep-based test asserting no bare $, backticks, or CR in the static prompt text, so future edits cannot silently introduce expansion.
-
 ## P4 — Parking lot (don't pick)
 
 - [ ] **Locale-dependent slice/length semantics accepted (jq tolerates U+FFFD)**

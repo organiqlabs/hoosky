@@ -197,6 +197,15 @@ d="$(mk_env t17)"
 out="$(run "$d" --help 2>&1)"; rc=$?
 if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q 'usage:'; then ok "--help: exits 0"; else bad "--help: exits 0 (rc=$rc)"; fi
 
+# 18. --dir with a path containing spaces: quoting preserved end to end
+d="$(mk_env t18)"
+mkdir -p "$d/src/my repo"
+git_q "$d" init -q "$d/src/my repo"
+out="$(run "$d" --dir "$d/src/my repo" 2>"$d/err")"; rc=$?
+if [ $rc -eq 0 ] && [ -x "$d/src/my repo/.git/hooks/prepare-commit-msg" ]; then
+  ok "--dir: path with spaces installed correctly"
+else bad "--dir: path with spaces installed correctly (rc=$rc)"; fi
+
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"
 exit "$fail"

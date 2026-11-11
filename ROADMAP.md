@@ -11,11 +11,6 @@
   - **Source**: sub-agent static scan
   - **Details**: git diff output is slurped into FULL_DIFF then truncated; a very large staged diff balloons memory first. Streaming redesign (temp file + wc/head) ~10 lines but real risk of subtle regressions in truncation NOTE semantics; parked, revisit only with a user report.
 
-- [ ] **.gitattributes: export-ignore AGENTS/ROADMAP/tests decision; checksums.txt lacks eol=lf**
-  - **File**: `.gitattributes`
-  - **Source**: sub-agent static scan
-  - **Details**: git archive / source zips would include non-runtime files (harmless for curl-pipe). Decide on export-ignore entries and whether checksums.txt needs eol=lf (fetched raw, not via checkout). Parked decision, not a defect.
-
 - [ ] **Hook: sibling chmod 0644 overrides umask — AI-drafted message world-readable until mv; decide keep/drop**
   - **File**: `prepare-commit-msg`
   - **Source**: sub-agent static scan

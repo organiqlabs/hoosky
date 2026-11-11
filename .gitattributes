@@ -3,3 +3,10 @@
 prepare-commit-msg text eol=lf
 prepare-commit-msg.test.sh text eol=lf
 install.sh text eol=lf
+# checksums.txt is fetched raw by the installer, but pin LF for any checkout too.
+checksums.txt text eol=lf
+# Source archives (git archive) need only the runtime files; drop dev/audit files.
+AGENTS.md export-ignore
+ROADMAP.md export-ignore
+prepare-commit-msg.test.sh export-ignore
+install.test.sh export-ignore

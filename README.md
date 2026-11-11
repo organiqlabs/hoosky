@@ -13,24 +13,34 @@ back to the normal empty message. (Sole exception: Ctrl-C/kill aborts the commit
 curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash
 ```
 
-That installs the `prepare-commit-msg` hook into the git repository at your current
-directory. Other modes: `--all ~/src` (every repo under a root), `--dir PATH`
-(repeatable), `--uninstall` (removes only if it matches the published checksum; add
-`--force` to override). The installer verifies the downloaded hook against
-`checksums.txt` from the same tag and refuses to install unverified code.
+That installs the `prepare-commit-msg` hook into your **global git hooks directory** —
+`~/.config/git/hooks` by default, or the directory your global `core.hooksPath` points at —
+so it runs in every repository. If `core.hooksPath` isn't set yet, the installer creates
+`~/.config/git/hooks`, sets `core.hooksPath` globally to point at it, and says so. Other
+modes: `--dir PATH` (one repo at PATH; repeatable), `--all ~/src` (every repo under a root),
+`--global` (explicit form of the default), `--uninstall` (removes only if it matches the
+published checksum; add `--force` to override). The installer verifies the downloaded hook
+against `checksums.txt` from the same tag and refuses to install unverified code.
 Then verify:
 
 ```sh
-test -x "$(git rev-parse --git-path hooks)/prepare-commit-msg" && echo hook-installed
+test -x "$(git config --global core.hooksPath)/prepare-commit-msg" && echo hook-installed
 ```
 
 Prefer no curl-pipe? The manual equivalent:
 
 ```sh
-curl -fsSL -o "$(git rev-parse --git-path hooks)/prepare-commit-msg" \
+mkdir -p "$HOME/.config/git/hooks"
+[ -n "$(git config --global core.hooksPath)" ] || git config --global core.hooksPath "$HOME/.config/git/hooks"
+curl -fsSL -o "$(git config --global core.hooksPath)/prepare-commit-msg" \
   https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/prepare-commit-msg
-chmod 0755 "$(git rev-parse --git-path hooks)/prepare-commit-msg"
+chmod 0755 "$(git config --global core.hooksPath)/prepare-commit-msg"
 ```
+
+Per-repo instead of global? Swap `$(git config --global core.hooksPath)` for
+`$(git rev-parse --git-path hooks)` and skip the config line. To go back,
+`git config --global --unset core.hooksPath` restores per-repo hooks (the installer never
+unsets it for you).
 
 The file is named `prepare-commit-msg`, and that's what it installs as — Git's
 `prepare-commit-msg` hook. It is not the `pre-commit.com` framework and not the

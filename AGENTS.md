@@ -4,8 +4,12 @@ Standalone Gemini-backed commit-message drafting hook. Files: `prepare-commit-ms
 `prepare-commit-msg.test.sh` (POSIX-only harness), `README.md`, `ROADMAP.md` (pomona
 backlog — open P1–P3 items are worked down to zero; P4 holds parked decisions,
 don't implement them without asking), `.gitignore`, `.gitattributes`, `LICENSE` (MIT),
-`install.sh` (curl installer for the hook) and `checksums.txt` (published sha256 of the
-hook and itself, read from the tag at install time). Git repo, branch `main`; no manifest, CI,
+`install.sh` (curl installer for the hook; default target is the global git hooks
+directory — sets `core.hooksPath` to `~/.config/git/hooks` globally after a successful
+global install when unset; `--dir`/`--all` target specific repos; `--global` is the
+explicit form of the default) and `checksums.txt` (published sha256 of the hook and
+itself, read from the tag at install time; regenerate the `install.sh` line with
+`sha256sum install.sh` after any installer edit). Git repo, branch `main`; no manifest, CI,
 or build. Don't invent toolchain commands. This repo is published as
 `organiqlabs/hoosky` — `install.sh` downloads the `v1.0.0` tag, not the worktree.
 

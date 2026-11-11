@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Zero-dependency test harness for ./prepare-commit-msg. Run: bash prepare-commit-msg.test.sh
 # Uses real git + jq; stubs curl in scratch PATHs. Never touches the network:
-# DENY_BIN/curl (which logs and exits 99) is on the PATH for every hook call
-# unless a test explicitly overrides PATH with STUB_BIN.
+# DENY_BIN/curl (which logs and exits 99) is on the PATH for hook calls that do not
+# explicitly override PATH (e.g. with STUB_BIN, EMPTY_BIN, or the MIN_* dirs).
 # Working stub curl: logs argv to $ARGV_LOG, captures the -d JSON body to
 # $CAPTURE_FILE, pipes stdin (the -K config) to $STDIN_LOG; emits
 # $STUB_RESPONSE_FILE or ok.json; exits $STUB_EXIT when set (digits only).
@@ -167,6 +167,15 @@ cert.jks|SEN-JKS-1
 sub/cert.JKS|SEN-JKSS-1
 cert.keystore|SEN-KST-1
 sub/cert.KEYSTORE|SEN-KSTS-1
+sub/Gemfile.lock|SEN-GEMLOCK-1
+SUB/GEMFILE.LOCK|SEN-GEMLOCKIC-1
+pkg/package-lock.json|SEN-PKGLOCK2-1
+sub/npm-shrinkwrap.json|SEN-NPMSHRNK-1
+sub/pnpm-lock.yaml|SEN-PNPMNEST-1
+a/b/c/bun.lockb|SEN-BUNNEST-1
+sub/bundle.min.js|SEN-MINNEST-1
+sub/deep/x.PEM|SEN-PEMNESTIC-1
+sub/deep/x.KEY|SEN-KEYNESTIC-1
 x.map|SEN-MAP-1
 sub/x.map|SEN-MAPS-1
 bundle.min.css|SEN-MINCS-1
@@ -203,7 +212,7 @@ r=$(make_repo skip); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" SKIP_AI_COMMIT=1 GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/p.json")
 if [ "$rc" = 0 ] && [ ! -e "$r/p.json" ]; then unchanged "$m" "SKIP_AI_COMMIT bypass (no curl, no capture)"; else bad "SKIP_AI_COMMIT bypass (rc=$rc)"; fi
 
-# 2. GEMINI_API_KEY unset/empty: no-op, exit 0 (empty overrides any ambient key)
+# 2. GEMINI_API_KEY unset/empty: no-op, exit 0 (an explicit empty string is treated as unset)
 r=$(make_repo nokey); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=)
 if [ "$rc" = 0 ] && deny_clean && grep -q 'GEMINI_API_KEY not set' "$ROOT/stderr"; then unchanged "$m" "missing key"; else bad "missing key (rc=$rc)"; fi
@@ -259,8 +268,11 @@ if [ "$rc" = 0 ] && grep -q "'grep' not found" "$ROOT/stderr"; then unchanged "$
 # 9. Happy path: draft prepended, comment kept, body valid & carries the diff
 r=$(make_repo happy); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
+jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt"
 if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts): add a thing' && grep -q '^# Please enter' "$m" \
-  && jq -e '.contents[0].parts[0].text | contains("diff --git")' "$r/prompt.json" >/dev/null; then
+  && jq -e '.contents[0].parts[0].text | contains("diff --git")' "$r/prompt.json" >/dev/null \
+  && grep -qE '^Branch: .+' "$r/prompt.txt" && grep -q 'Recent commit subjects' "$r/prompt.txt" \
+  && ! compgen -G "$r/COMMIT_EDITMSG.ai-commit.*" >/dev/null; then
   ok "happy path draft prepended"; else bad "happy path draft prepended (rc=$rc)"; fi
 
 # 10. API error payload: warn (with API message), exit 0, file untouched
@@ -304,7 +316,7 @@ rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CA
 if [ "$rc" = 0 ] && grep -q 'diff --git' "$r/prompt.json" \
   && ! grep -q 'SUPERSECRET-123' "$r/prompt.json" && ! grep -q 'SUPERSECRET-456' "$r/prompt.json"; then ok ".env contents never sent"; else bad ".env contents never sent (rc=$rc)"; fi
 
-# 16. Sentinel matrix: every excluded pattern is excluded at root and nested (icase where applicable)
+# 16. Sentinel matrix: every exclusion that has fixtures below is excluded at root and nested (icase where applicable)
 r=$(make_sentinel_repo matrix); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
 hits=$(grep -oE 'SEN-[A-Z0-9-]+' "$r/prompt.json" 2>/dev/null | sort -u | tr '\n' ' ')
@@ -319,7 +331,7 @@ if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts)' && ! grep -q 'intege
 r=$(make_repo hugeint); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" GEMINI_MAX_DIFF_CHARS=99999999999999999999999)
 if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts)' && ! grep -q 'integer expression' "$ROOT/stderr"; then ok "absurd integer MAX_DIFF_CHARS falls back"; else bad "absurd integer MAX_DIFF_CHARS (rc=$rc)"; fi
-for t in 0 abc; do
+for t in 0 abc 100; do
   r=$(make_repo "timeout-$t"); m=$(fresh_msg "$r")
   rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" GEMINI_TIMEOUT="$t")
   if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts)'; then ok "GEMINI_TIMEOUT=$t falls back"; else bad "GEMINI_TIMEOUT=$t (rc=$rc)"; fi
@@ -388,15 +400,15 @@ if [ "$rc" = 0 ] && [ "$max_body" -gt 0 ] && [ "$max_body" -le 20 ]; then
 
 # 24. Invalid GEMINI_MAX_SUBJECT_CHARS / GEMINI_BODY_WRAP_CHARS fall back to defaults
 subj_fb=1
-for v in abc 0 99999; do
+for v in abc 0 00 0000 99999; do
   r=$(make_repo "badsubj-$v"); m=$(fresh_msg "$r")
   rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/longsubj.json" GEMINI_MAX_SUBJECT_CHARS="$v")
   s=$(head -1 "$m")
-  { [ "$rc" = 0 ] && [ "${#s}" -le 50 ]; } || subj_fb=0
+  { [ "$rc" = 0 ] && [ -n "$s" ] && [ "${#s}" -le 50 ] && [ "${s#feat}" != "$s" ]; } || subj_fb=0
 done
 if [ "$subj_fb" = 1 ]; then ok "invalid MAX_SUBJECT_CHARS falls back to 50"; else bad "invalid MAX_SUBJECT_CHARS falls back to 50"; fi
 wrap_fb=1
-for v in abc 0 99999; do
+for v in abc 0 00 0000 99999; do
   r=$(make_repo "badwrap-$v"); m=$(fresh_msg "$r")
   rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/longsubj.json" GEMINI_BODY_WRAP_CHARS="$v")
   mb=0
@@ -404,14 +416,16 @@ for v in abc 0 99999; do
     case "$line" in \#*|'') continue ;; esac
     [ "${#line}" -gt "$mb" ] && mb="${#line}"
   done < <(tail -n +2 "$m")
-  { [ "$rc" = 0 ] && [ "$mb" -le 75 ]; } || wrap_fb=0
+  { [ "$rc" = 0 ] && [ "$mb" -gt 0 ] && [ "$mb" -le 75 ]; } || wrap_fb=0
 done
 if [ "$wrap_fb" = 1 ]; then ok "invalid BODY_WRAP_CHARS falls back to 75"; else bad "invalid BODY_WRAP_CHARS falls back to 75"; fi
 
 # 25. Zero-bypass regression: 00-style values fall back to the defaults (argv-verified)
 r=$(make_repo zeros1); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" ARGV_LOG="$r/argv.txt" GEMINI_TIMEOUT=00 GEMINI_MAX_DIFF_CHARS=00)
-if [ "$rc" = 0 ] && grep -A1 -- '--max-time' "$r/argv.txt" | tail -1 | grep -qx '20' && head -1 "$m" | grep -q '^feat('; then
+if [ "$rc" = 0 ] && grep -A1 -- '--max-time' "$r/argv.txt" | tail -1 | grep -qx '20' \
+  && grep -A1 -- '--max-filesize' "$r/argv.txt" | tail -1 | grep -qx '10485760' \
+  && head -1 "$m" | grep -q '^feat('; then
   ok "TIMEOUT=00 / MAX_DIFF_CHARS=00 fall back to defaults"; else bad "TIMEOUT=00 / MAX_DIFF_CHARS=00 fall back to defaults (rc=$rc)"; fi
 r=$(make_repo zeros2); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" GEMINI_MAX_SUBJECT_CHARS=00 GEMINI_BODY_WRAP_CHARS=00)
@@ -454,45 +468,53 @@ jq -r '.contents[0].parts[0].text' "$r/prompt.json" > "$r/prompt.txt" 2>/dev/nul
 full=$(sed -n '/^Diff stat:$/,/^Staged diff:$/p' "$r/prompt.txt" | wc -c)
 # overhead vs the raw STAT bytes: "Diff stat:\n" (11) + newline after ${STAT} in the
 # template (1) + the blank line before "Staged diff:" (1) + "Staged diff:\n" (13) = 26
-if [ "$rc" = 0 ] && [ -n "$full" ] && [ "$full" -le 4026 ]; then
+if [ "$rc" = 0 ] && grep -q '^Diff stat:$' "$r/prompt.txt" \
+  && grep -q 'padpad' "$r/prompt.txt" && [ -n "$full" ] && [ "$full" -gt 26 ] && [ "$full" -le 4026 ]; then
   ok "stat section capped at 4000 bytes (got $full incl. markers)"
 else bad "stat section capped at 4000 bytes (rc=$rc, full=$full)"; fi
 
-# 28. Failure paths warn + exit 0: unreadable msg file; failed sibling write in a read-only dir
-r=$(make_repo unread); m=$(fresh_msg "$r")
-before=$(sha1sum "$m")
-chmod 000 "$m"
-rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin")
-chmod 644 "$m"
-after=$(sha1sum "$m")
-if [ "$rc" = 0 ] && grep -q 'not readable' "$ROOT/stderr" && [ "$before" = "$after" ]; then
-  ok "unreadable message file: warns, exits 0, leaves file unchanged"
-else bad "unreadable message file: warns, exits 0, leaves file unchanged (rc=$rc)"; fi
+# 28. Failure paths warn + exit 0: unreadable msg file; unwritable msg dir (skipped as root)
+if [ "$(id -u)" != 0 ]; then
+  r=$(make_repo unread); m=$(fresh_msg "$r")
+  before=$(sha1sum "$m")
+  chmod 000 "$m"
+  rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin")
+  chmod 644 "$m"
+  after=$(sha1sum "$m")
+  if [ "$rc" = 0 ] && grep -q 'not readable' "$ROOT/stderr" && [ "$before" = "$after" ]; then
+    ok "unreadable message file: warns, exits 0, leaves file unchanged"
+  else bad "unreadable message file: warns, exits 0, leaves file unchanged (rc=$rc)"; fi
 
-r=$(make_repo rowrite); d="$ROOT/readonly-$$"; mkdir -p "$d"
-m="$d/COMMIT_EDITMSG"; printf '\n# Please enter the commit message\n' > "$m"; chmod 555 "$d"
-# NOTE: with the writability pre-check, the hook exits before the API call (no curl is
-# burned), so the mv-failure tail path is intentionally not exercised here.
-rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
-if [ "$rc" = 0 ] && grep -q 'not writable' "$ROOT/stderr" \
-  && [ ! -e "$r/prompt.json" ] && ! compgen -G "$d/.ai-commit.*" >/dev/null && grep -q '^# Please enter' "$m"; then
-  ok "unwritable msg dir: warns before API call, exits 0, no curl, no sibling"
-else bad "unwritable msg dir: warns before API call, exits 0, no curl, no sibling (rc=$rc)"; fi
-chmod 755 "$d"
+  r=$(make_repo rowrite); d="$ROOT/readonly-$$"; mkdir -p "$d"
+  m="$d/COMMIT_EDITMSG"; printf '\n# Please enter the commit message\n' > "$m"; chmod 555 "$d"
+  # NOTE: with the writability pre-check, the hook exits before the API call (no curl is
+  # burned), so the mv-failure tail path is intentionally not exercised here.
+  rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
+  if [ "$rc" = 0 ] && grep -q 'not writable' "$ROOT/stderr" \
+    && [ ! -e "$r/prompt.json" ] && ! compgen -G "$d/.ai-commit.*" >/dev/null && grep -q '^# Please enter' "$m"; then
+    ok "unwritable msg dir: warns before API call, exits 0, no curl, no sibling"
+  else bad "unwritable msg dir: warns before API call, exits 0, no curl, no sibling (rc=$rc)"; fi
+  chmod 755 "$d"
+fi
 
 # 29. GEMINI_MODEL default, override, and invalid-id fallback (argv-verified)
 d="$ROOT/model-check"; rm -rf "$d"; mkdir -p "$d"
 r=$(make_repo model-default); m=$(fresh_msg "$r")
 run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" ARGV_LOG="$d/argv-default.txt" >/dev/null
+cp "$ROOT/stderr" "$d/err-default.txt"
 r=$(make_repo model-override); m=$(fresh_msg "$r")
 run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" ARGV_LOG="$d/argv-override.txt" GEMINI_MODEL=my-test-model-1 >/dev/null
+cp "$ROOT/stderr" "$d/err-override.txt"
 r=$(make_repo model-bad); m=$(fresh_msg "$r")
 run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" ARGV_LOG="$d/argv-bad.txt" GEMINI_MODEL='bad model id' >/dev/null
+cp "$ROOT/stderr" "$d/err-bad.txt"
 mc=0
 grep -qF 'models/gemini-3.5-flash-lite:generateContent' "$d/argv-default.txt" || mc=1
 grep -qF 'models/my-test-model-1:generateContent'     "$d/argv-override.txt" || mc=1
 grep -qF 'models/gemini-3.5-flash-lite:generateContent' "$d/argv-bad.txt"    || mc=1
-grep -q 'not a valid model id' "$ROOT/stderr"                                || mc=1
+grep -q 'not a valid model id' "$d/err-bad.txt"                                || mc=1
+! grep -q 'ai-commit:' "$d/err-default.txt"                                    || mc=1
+! grep -q 'ai-commit:' "$d/err-override.txt"                                   || mc=1
 if [ "$mc" = 0 ]; then ok "gemini model default/override/invalid-id fallback"; else bad "gemini model default/override/invalid-id fallback"; fi
 
 # 30. C0/ESC control chars from the response are stripped; tabs become spaces
@@ -510,20 +532,75 @@ else bad "C0 control chars stripped; tabs expanded to spaces (rc=$rc)"; fi
 d="$ROOT/detail-check"; rm -rf "$d"; mkdir -p "$d"
 r=$(make_repo detail-default); m=$(fresh_msg "$r")
 run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$d/default.json" >/dev/null
+cp "$ROOT/stderr" "$d/err-default.txt"
 r=$(make_repo detail-standard); m=$(fresh_msg "$r")
 run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$d/standard.json" GEMINI_DETAIL_LEVEL=STANDARD >/dev/null
+cp "$ROOT/stderr" "$d/err-standard.txt"
 r=$(make_repo detail-detailed); m=$(fresh_msg "$r")
 run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$d/detailed.json" GEMINI_DETAIL_LEVEL=Detailed >/dev/null
+cp "$ROOT/stderr" "$d/err-detailed.txt"
 r=$(make_repo detail-bogus); m=$(fresh_msg "$r")
 run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$d/bogus.json" GEMINI_DETAIL_LEVEL=bogus >/dev/null
+cp "$ROOT/stderr" "$d/err-bogus.txt"
 ptext() { jq -r '.contents[0].parts[0].text' "$1" 2>/dev/null; }
 dc=0
 ptext "$d/default.json"  | grep -q 'Required detail level (minimal): Minimal:'  || dc=1
 ptext "$d/standard.json" | grep -q 'Required detail level (standard): Standard:' || dc=1
 ptext "$d/detailed.json" | grep -q 'Required detail level (detailed): Detailed:' || dc=1
 ptext "$d/bogus.json"    | grep -q 'Required detail level (minimal): Minimal:'   || dc=1
-grep -q 'not one of minimal' "$ROOT/stderr"                                      || dc=1
+grep -q 'not one of minimal' "$d/err-bogus.txt"                                  || dc=1
+! grep -q 'ai-commit:' "$d/err-default.txt"                                      || dc=1
+! grep -q 'ai-commit:' "$d/err-standard.txt"                                     || dc=1
+! grep -q 'ai-commit:' "$d/err-detailed.txt"                                     || dc=1
 if [ "$dc" = 0 ]; then ok "GEMINI_DETAIL_LEVEL selects the tier (default minimal; bogus falls back)"; else bad "GEMINI_DETAIL_LEVEL tier selection (dc=$dc)"; fi
+
+# 32. Opening fence with a language tag is stripped too
+cat > "$ROOT/langfence.json" <<'JSON'
+{"candidates":[{"content":{"parts":[{"text":"```diff\nfeat(x): fenced subject\n```\nbody line"}]}}]}
+JSON
+r=$(make_repo langfence); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/langfence.json")
+if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(x): fenced subject' && ! grep -q '```' "$m"; then
+  ok "opening fence with a language tag stripped"; else bad "opening fence with a language tag stripped (rc=$rc)"; fi
+
+# 33. Response wrapped in only fences and blanks: warns, exits 0, file unchanged
+cat > "$ROOT/onlyfence.json" <<'JSON'
+{"candidates":[{"content":{"parts":[{"text":"\n```\n```\n\n~~~\n"}]}}]}
+JSON
+r=$(make_repo onlyfence); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/onlyfence.json")
+if [ "$rc" = 0 ] && grep -q 'only formatting noise' "$ROOT/stderr" && ! grep -qE '^[^#[:space:]]' "$m"; then
+  ok "all-fence response: warns, exits 0, file unchanged"
+else bad "all-fence response: warns, exits 0, file unchanged (rc=$rc)"; fi
+
+# 34. grep exists but errors (exit 2): warns, exits 0, file unchanged
+GTWO="$ROOT/gt-two"; mkdir -p "$GTWO"
+cat > "$GTWO/grep" <<'EOF'
+#!/usr/bin/env bash
+exit 2
+EOF
+chmod +x "$GTWO/grep"
+r=$(make_repo greptwo); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$GTWO:$STUB_BIN:/usr/bin:/bin")
+if [ "$rc" = 0 ] && grep -q 'could not inspect' "$ROOT/stderr" && ! grep -qE '^[^#[:space:]]' "$m"; then
+  ok "grep rc>=2: warns, exits 0, file unchanged"
+else bad "grep rc>=2: warns, exits 0, file unchanged (rc=$rc)"; fi
+
+# 35. mv fails at prepend time: warn, sibling cleaned, msg untouched
+MV_FAIL="$ROOT/mv-fail"; mkdir -p "$MV_FAIL"
+cat > "$MV_FAIL/mv" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "$MV_FAIL/mv"
+r=$(make_repo mvfail); m=$(fresh_msg "$r")
+before=$(sha1sum "$m")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$MV_FAIL:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
+after=$(sha1sum "$m")
+if [ "$rc" = 0 ] && grep -q 'could not write' "$ROOT/stderr" && [ "$before" = "$after" ] \
+  && ! compgen -G "$r/COMMIT_EDITMSG.ai-commit.*" >/dev/null; then
+  ok "mv failure: warns, exits 0, sibling cleaned, msg unchanged"
+else bad "mv failure: warns, exits 0, sibling cleaned, msg unchanged (rc=$rc)"; fi
 
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"

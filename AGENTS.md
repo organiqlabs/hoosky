@@ -23,7 +23,7 @@ or build. Don't invent toolchain commands.
 - Never blocks a commit: every failure path warns on stderr and `exit 0`.
   `set -u` only, no `set -e`.
 - No-op when: `GEMINI_API_KEY` unset or contains characters unsafe for the curl config
-  (`"`, `\`, CR, LF); `curl`/`jq`/`git`/`grep` missing; staged diff empty;
+  (`"`, `\`, CR, LF); `curl`/`jq`/`git`/`grep`/`sed`/`tr` missing; staged diff empty;
   commit source is `message|merge|squash|commit` (i.e. `-m`, merge, squash, amend);
   or the message file already has non-comment content. If `grep` cannot inspect the
   message file, the hook warns and exits 0 without touching it.
@@ -60,5 +60,6 @@ or build. Don't invent toolchain commands.
 - Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; `tr`/`sed` are required POSIX tools).
 - `bash -n prepare-commit-msg`
 - `bash prepare-commit-msg.test.sh` — prints `all tests passed (N tests)` and exits 0 (or
-  `FAILURES (N tests)` and exits 1). Zero deps beyond git/jq; stubs `curl` in scratch
+  `FAILURES (N tests)` and exits 1). Zero deps beyond git/jq and coreutils POSIX tools
+  (seq, sed, wc, tr, sort, ln, chmod, mktemp); stubs `curl` in scratch
   PATHs, never touches the network; runs in temp git repos.

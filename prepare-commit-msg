@@ -74,11 +74,11 @@ wrap_text() {
 
 # --- Guards
 [ -n "$COMMIT_MSG_FILE" ] || exit 0
-[ -r "$COMMIT_MSG_FILE" ] && [ ! -d "$COMMIT_MSG_FILE" ] || { warn "message file '$COMMIT_MSG_FILE' not readable (missing, directory, or no permission); skipping"; exit 0; }
 [ "${SKIP_AI_COMMIT:-0}" = "1" ] && exit 0
 case "$COMMIT_SOURCE" in message|merge|squash|commit) exit 0 ;; esac  # -m, merge, squash, amend/-c/-C
+[ -r "$COMMIT_MSG_FILE" ] && [ ! -d "$COMMIT_MSG_FILE" ] && [ ! -p "$COMMIT_MSG_FILE" ] || { warn "message file '$COMMIT_MSG_FILE' not readable (missing, directory, fifo, or no permission); skipping"; exit 0; }
 
-for cmd in curl jq git grep; do
+for cmd in curl jq git grep sed tr; do
   command -v "$cmd" >/dev/null 2>&1 || { warn "'$cmd' not found; skipping"; exit 0; }
 done
 
@@ -93,20 +93,20 @@ case "$GEMINI_API_KEY" in
 esac
 
 # --- Collect context
-# Anchored literal-prefix exclusions match only the repo root under git's
-# default pathspec magic; the leading `*` matches at any depth (root included).
+# All patterns are `*`-prefixed so they match at any depth (root included) under git's
+# default pathspec magic; case-insensitive everywhere. Do not drop the leading `*`.
 EXCLUDES=(':(exclude,icase)*.env*' ':(exclude,icase)*.npmrc' ':(exclude,icase)*.pypirc' ':(exclude,icase)*.netrc'
           ':(exclude,icase)*.git-credentials' ':(exclude,icase)*credentials*.json'
           ':(exclude,icase)*secrets.*'
           ':(exclude,icase)*id_rsa*' ':(exclude,icase)*id_dsa*' ':(exclude,icase)*id_ecdsa*' ':(exclude,icase)*id_ed25519*'
           ':(exclude,icase)*.pgpass' ':(exclude,icase)*.htpasswd'
-          ':(exclude)*.docker/config.json' ':(exclude)*.kube/config'
+          ':(exclude,icase)*.docker/config.json' ':(exclude,icase)*.kube/config'
           ':(exclude,icase)*.aws/credentials' ':(exclude,icase)*.m2/settings.xml' ':(exclude,icase)*.ppk'
           ':(exclude,icase)*.p12' ':(exclude,icase)*.pfx' ':(exclude,icase)*.jks' ':(exclude,icase)*.keystore'
           ':(exclude,icase)*.pem' ':(exclude,icase)*.key'
-          ':(exclude,icase)*.lock' ':(exclude)*package-lock.json' ':(exclude)*npm-shrinkwrap.json'
-          ':(exclude)*pnpm-lock.yaml' ':(exclude)*bun.lockb'
-          ':(exclude)*.min.js' ':(exclude,icase)*.min.css' ':(exclude)*.map')
+          ':(exclude,icase)*.lock' ':(exclude,icase)*package-lock.json' ':(exclude,icase)*npm-shrinkwrap.json'
+          ':(exclude,icase)*pnpm-lock.yaml' ':(exclude,icase)*bun.lockb'
+          ':(exclude,icase)*.min.js' ':(exclude,icase)*.min.css' ':(exclude,icase)*.map')
 
 FULL_DIFF="$(git diff --no-ext-diff --no-textconv --cached --no-color --unified=2 -- . "${EXCLUDES[@]}" 2>/dev/null)"
 [ -n "$FULL_DIFF" ] || exit 0
@@ -129,7 +129,8 @@ case "$DIFF" in *$'\n') ;; *) DIFF="$DIFF"$'\n' ;; esac
 STAT_FULL="$(git diff --no-ext-diff --no-textconv --cached --stat --no-color -- . "${EXCLUDES[@]}" 2>/dev/null)"
 STAT="$STAT_FULL"
 # cap at 4000 bytes, and only drop the (possibly partial) first line when we know a cut happened
-[ "${#STAT_FULL}" -gt 4000 ] && STAT="$(printf '%s' "$STAT_FULL" | tail -c 4000 | tail -n +2)"
+stat_bytes="$(printf '%s' "$STAT_FULL" | wc -c)"
+[ "$stat_bytes" -gt 4000 ] && STAT="$(printf '%s' "$STAT_FULL" | tail -c 4000 | tail -n +2)"
 BRANCH="$(git branch --show-current 2>/dev/null)"
 RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 
@@ -180,6 +181,7 @@ MSG="$(printf '%s' "$RESPONSE" |
 if [ -z "$MSG" ]; then
   ERR="$(printf '%s' "$RESPONSE" | jq -r '.error.message // empty' 2>/dev/null)"
   [ -n "$ERR" ] || ERR="$(cat "$TMP/curl.err" 2>/dev/null)"
+  ERR="$(printf '%s' "$ERR" | tr -d '\000-\010\013-\037\177' | head -c 200)"
   warn "no message generated${ERR:+: $ERR}"
   exit 0
 fi
@@ -187,23 +189,24 @@ fi
 # Strip stray code fences and leading blank lines; C0/DEL controls can be smuggled
 # via a hostile diff and fire as terminal escapes when the committer reads the log;
 # tabs are expanded so the wrap width counts visible columns consistently.
-MSG="$(printf '%s' "$MSG" | tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | sed -E -e '/^[`~]{3,}$/d' -e '/./,$!d')"
+MSG="$(printf '%s' "$MSG" | tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | sed -E -e '/^[`~]{3,}[A-Za-z0-9_.-]*[[:space:]]*$/d' -e '/./,$!d')"
+[ -n "$MSG" ] || { warn "response contained only formatting noise; skipping"; exit 0; }
 
 # --- Normalize the final format: subject limit + body wrap (configurable)
 SUBJ="${MSG%%$'\n'*}"
 REM="${MSG#"$SUBJ"}"
 BODY="${REM#$'\n'}"
+BODY="$(printf '%s' "$BODY" | sed -e '/./,$!d')"   # collapse leading blank lines
 if [ "${#SUBJ}" -gt "$MAX_SUBJECT_CHARS" ]; then
   CUT="${SUBJ:0:$MAX_SUBJECT_CHARS}"
   TRIMMED="${CUT% *}"             # cut back to the last word boundary
   [ -z "$TRIMMED" ] && TRIMMED="$CUT"
-  [ "$TRIMMED" = "$CUT" ] || TRIMMED="${TRIMMED% }"
   warn "subject exceeds ${MAX_SUBJECT_CHARS} chars; truncated"
   SUBJ="$TRIMMED"
 fi
 if [ -n "$BODY" ]; then
   WRAPPED="$(printf '%s\n' "$BODY" | wrap_text "$BODY_WRAP_CHARS")"
-  MSG="$SUBJ"$'\n'"$WRAPPED"
+  MSG="$SUBJ"$'\n\n'"$WRAPPED"
 else
   MSG="$SUBJ"
 fi
@@ -211,6 +214,7 @@ fi
 # --- Prepend draft; atomic-ish write into the same directory as the msg file
 # mktemp template in the msg dir (same filesystem for mv; unpredictable name, no clobber)
 SIBLING="$(mktemp "${COMMIT_MSG_FILE}.ai-commit.XXXXXX" 2>/dev/null)" || { warn "could not create temp sibling for '$COMMIT_MSG_FILE'; skipping"; exit 0; }
+chmod 0644 "$SIBLING"
 if { printf '%s\n\n' "$MSG"; cat "$COMMIT_MSG_FILE"; } > "$SIBLING" 2>/dev/null &&
   mv -f "$SIBLING" "$COMMIT_MSG_FILE"; then
   SIBLING=""

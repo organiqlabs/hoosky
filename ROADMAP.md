@@ -4,11 +4,6 @@
 
 ## P3 — Worth doing, plan the split
 
-- [ ] **Installer: sha256sum unavailable on macOS by default**
-  - **File**: `install.sh`
-  - **Source**: static scan
-  - **Details**: Installer requires sha256sum (not present on macOS without coreutils); published_sum/file_sum break on stock macOS. Add a shasum -a 256 fallback or document the coreutils prerequisite.
-
 - [ ] **Tests: --dir/--all with paths containing spaces**
   - **File**: `install.test.sh`
   - **Source**: test gap

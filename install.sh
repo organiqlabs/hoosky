@@ -62,9 +62,13 @@ if [ "$GLOBAL" = 1 ] && { [ ${#DIRS[@]} -gt 0 ] || [ -n "$ALL_ROOT" ]; }; then
   exit 2
 fi
 
-for cmd in curl git sha256sum awk sort find; do
+for cmd in curl git awk sort find; do
   command -v "$cmd" >/dev/null 2>&1 || { err "'$cmd' not found; install it and retry"; exit 1; }
 done
+if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+  err "'sha256sum' (or 'shasum') not found; install it and retry"
+  exit 1
+fi
 
 # Print the deduplicated list of repo roots to act on (--dir/--all targets only).
 discover_repos() {
@@ -151,7 +155,13 @@ repo_hooks_dir() {  # <repo> -> absolute hooks dir
   case "$hd" in /*) printf '%s\n' "$hd" ;; *) printf '%s\n' "$1/$hd" ;; esac
 }
 
-file_sum() { sha256sum "$1" | awk '{ print $1 }'; }
+file_sum() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{ print $1 }'
+  else
+    shasum -a 256 "$1" | awk '{ print $1 }'
+  fi
+}
 
 # Download once (install path only), verify once, then act per target. Fetch the
 # published checksum exactly once either way.

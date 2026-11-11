@@ -2,5 +2,8 @@
 *.swp
 .DS_Store
 
-# prepare-commit-msg sibling temp files (same-dir temp + mv abort path)
+# prepare-commit-msg sibling temp files (same-dir temp + mv abort path).
+# Rarely fires: siblings live next to the commit-msg file, normally inside .git/.
+# This only covers non-standard message-file locations in the worktree, and it is
+# overbroad by design (hides any *.ai-commit.*), so keep it.
 *.ai-commit.*

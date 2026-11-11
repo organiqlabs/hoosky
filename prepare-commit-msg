@@ -128,15 +128,21 @@ case "$DIFF" in *$'\n') ;; *) DIFF="$DIFF"$'\n' ;; esac
 
 STAT_FULL="$(git diff --no-ext-diff --no-textconv --cached --stat --no-color -- . "${EXCLUDES[@]}" 2>/dev/null)"
 STAT="$STAT_FULL"
-# cap at 4000 bytes, and only drop the (possibly partial) first line when we know a cut happened
+# cap at 4000 bytes, and only drop the (possibly partial) first line when we know a cut happened;
+# a single >4000-byte line with no newline would make the tail-line drop empty, so fall back to the raw slice
 stat_bytes="$(printf '%s' "$STAT_FULL" | wc -c)"
-[ "$stat_bytes" -gt 4000 ] && STAT="$(printf '%s' "$STAT_FULL" | tail -c 4000 | tail -n +2)"
+if [ "$stat_bytes" -gt 4000 ]; then
+  STAT="$(printf '%s' "$STAT_FULL" | tail -c 4000 | tail -n +2)"
+  [ -z "$STAT" ] && STAT="$(printf '%s' "$STAT_FULL" | tail -c 4000)"
+fi
 BRANCH="$(git branch --show-current 2>/dev/null)"
 RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 
 TMP="$(mktemp -d)" || { warn "mktemp -d failed; skipping"; exit 0; }
 SIBLING=""
 trap 'rm -rf "$TMP"; [ -z "$SIBLING" ] || rm -f "$SIBLING"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # --- Build request
 # AUDIT WARNING: the heredoc below is UNQUOTED by design — ${BRANCH}, ${RECENT},
@@ -187,9 +193,10 @@ if [ -z "$MSG" ]; then
 fi
 
 # Strip stray code fences and leading blank lines; C0/DEL controls can be smuggled
-# via a hostile diff and fire as terminal escapes when the committer reads the log;
+# via a hostile model response (echoing attacker-controlled diff content) and fire
+# as terminal escapes when the committer reads the log;
 # tabs are expanded so the wrap width counts visible columns consistently.
-MSG="$(printf '%s' "$MSG" | tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | sed -E -e '/^[`~]{3,}[A-Za-z0-9_.-]*[[:space:]]*$/d' -e '/./,$!d')"
+MSG="$(printf '%s' "$MSG" | tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | sed -E -e '/^[`~]{3,}([A-Za-z0-9_.+#-]+)?[[:space:]]*$/d' -e '/./,$!d')"
 [ -n "$MSG" ] || { warn "response contained only formatting noise; skipping"; exit 0; }
 
 # --- Normalize the final format: subject limit + body wrap (configurable)
@@ -220,6 +227,5 @@ if { printf '%s\n\n' "$MSG"; cat "$COMMIT_MSG_FILE"; } > "$SIBLING" 2>/dev/null 
   SIBLING=""
   exit 0
 fi
-rm -f "$SIBLING"
-warn "could not write message file; leaving it unchanged"
+warn "could not write message file; leaving it unchanged"   # the EXIT trap removes $SIBLING
 exit 0

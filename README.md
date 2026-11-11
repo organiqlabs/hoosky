@@ -2,12 +2,14 @@
 
 One Gemini request drafts a Conventional Commits message from your staged diff and
 pre-fills the commit editor. It never blocks a commit: every failure path falls
-back to the normal empty message.
+back to the normal empty message. (Sole exception: Ctrl-C/kill aborts the commit
+— and cleans up its temp files — as any interrupt would.)
 
 ## Install
 
 ```sh
 install -m755 prepare-commit-msg /path/to/repo/.git/hooks/prepare-commit-msg
+test -x /path/to/repo/.git/hooks/prepare-commit-msg && echo hook-installed
 ```
 
 The file is named `prepare-commit-msg`, and that's what it installs as — Git's
@@ -23,7 +25,7 @@ git commit                  # editor opens pre-filled with an AI draft
 SKIP_AI_COMMIT=1 git commit # bypass entirely
 ```
 
-Set `GEMINI_API_KEY` first. On the warning paths — missing `curl`/`jq`/`git`/`grep`, an unparseable API response, unsafe key characters — the hook prints a one-line reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=1`, `-m`/merge/squash/amend, a message file that already has content, or an empty staged diff it exits 0 silently. Either way, the commit behaves exactly as if the hook weren't installed.
+Set `GEMINI_API_KEY` first. On the warning paths — missing `curl`/`jq`/`git`/`grep`/`sed`/`tr`, an unparseable or oversized API response, an unsafe or unset key — the hook prints a one-line reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=1`, `-m`/merge/squash/amend, a message file that already has content, or an empty staged diff it exits 0 silently. Either way, the commit behaves exactly as if the hook weren't installed.
 
 | Variable                   | Default                 | Meaning                                             |
 | -------------------------- | ----------------------- | --------------------------------------------------- |
@@ -35,13 +37,19 @@ Set `GEMINI_API_KEY` first. On the warning paths — missing `curl`/`jq`/`git`/`
 | `GEMINI_BODY_WRAP_CHARS`   | `75`                    | Body wrap width                                     |
 | `GEMINI_DETAIL_LEVEL`      | `minimal`               | Detail tier: `minimal` \| `standard` \| `detailed`  |
 
+Knob fallbacks: values that are non-numeric, zero-style (e.g. `00`), or oversized fall back to the
+default (`>15`-digit diff, `>2`-digit timeout, `>3`-digit subject/body). An invalid `GEMINI_MODEL`
+id warns and falls back to `gemini-3.5-flash-lite`. If the first 30000 characters of the diff contain
+no newline, the raw slice is used and the truncation note says so. API responses over 10 MiB are
+refused by curl.
+
 Staged secret/credential material is excluded from the diff sent to the API, matched
 at any depth (root and nested), case-insensitively where applicable: `.env*` files,
 private keys and certificates (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
 `*.ppk`, SSH key material incl. `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`), cloud and tool
 credentials (`.aws/credentials`, `.m2/settings.xml`, `.npmrc`, `.netrc`, `.git-credentials`,
-`.pgpass`, `.htpasswd`, `credentials*.json`, `secrets.*`, Docker/Kubernetes config),
-lockfiles (`*.lock`, `package-lock.json`, `pnpm-lock.yaml`, `npm-shrinkwrap.json`, `bun.lockb`),
+`.pgpass`, `.htpasswd`, `.pypirc`, `*credentials*.json`, `*secrets.*`, Docker/Kubernetes config),
+lockfiles (`*.lock`, `*package-lock.json`, `*pnpm-lock.yaml`, `*npm-shrinkwrap.json`, `*bun.lockb`),
 and minified assets (`*.min.js`, `*.min.css`, `*.map`). `.git` history and hook files
 are not part of the payload, and the API key is never exposed in `ps` output.
 

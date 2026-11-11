@@ -21,13 +21,16 @@ or build. Don't invent toolchain commands.
 ## Behavior contract (preserve when editing)
 
 - Never blocks a commit: every failure path warns on stderr and `exit 0`.
-  `set -u` only, no `set -e`.
-- No-op when: `GEMINI_API_KEY` unset or contains characters unsafe for the curl config
-  (`"`, `\`, CR, LF); `curl`/`jq`/`git`/`grep`/`sed`/`tr` missing; staged diff empty;
-  commit source is `message|merge|squash|commit` (i.e. `-m`, merge, squash, amend);
-  or the message file already has non-comment content. If `grep` cannot inspect the
-  message file, the hook warns and exits 0 without touching it.
-- `SKIP_AI_COMMIT=1` bypasses entirely (before any git/curl call).
+  `set -u` only, no `set -e`. Sole exception: SIGINT/SIGTERM (the user or git aborts the commit
+  anyway) clean up and exit 130/143.
+- Silent no-op when: no message-file argument; `SKIP_AI_COMMIT=1` (checked before any git/curl
+  call); commit source is `message|merge|squash|commit` (i.e. `-m`, merge, squash, amend); the
+  message file already has non-comment content; the staged diff is empty.
+- Warns and exits 0 (message/file untouched) when: the message file is not readable, a directory,
+  or a fifo; `curl`/`jq`/`git`/`grep`/`sed`/`tr` missing; `grep` cannot inspect the message file
+  (rc≥2); the message directory is not writable; `GEMINI_API_KEY` unset or contains characters
+  unsafe for the curl config (`"`, `\`, CR, LF); the response is unparseable, empty after
+  fence-stripping, or over 10 MiB (`--max-filesize 10485760`).
 - Diff excludes (case-insensitive, matched at any depth — root and nested; `*`-prefixed
   patterns apply everywhere): `.env*`, private-key/credential material (`*.pem`, `*.key`,
   `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.ppk`, `*id_rsa*`, `*id_dsa*`, `*id_ecdsa*`,
@@ -39,13 +42,16 @@ or build. Don't invent toolchain commands.
   Keep these intact — they exist so secrets never reach the API. `prepare-commit-msg.test.sh`
   has sentinel matrix tests for them (`# 16`).
 - API key goes to curl via `-K -` on stdin, never argv (keeps it out of `ps`). Don't "simplify" this.
-- Diff truncates to `GEMINI_MAX_DIFF_CHARS` (default 30000, cut at a line boundary);
-  `GEMINI_MODEL` default `gemini-3.5-flash-lite`; `GEMINI_TIMEOUT` default 20s.
+- Diff truncates to `GEMINI_MAX_DIFF_CHARS` (default 30000, cut at a line boundary — or kept as a
+  raw slice with a different NOTE wording when the first 30000 chars contain no newline);
+  `GEMINI_MODEL` default `gemini-3.5-flash-lite` (validated against `A-Za-z0-9._-`; anything else
+  warns and falls back); `GEMINI_TIMEOUT` default 20s (over 2 digits ⇒ 20).
   Env-var fallback rules (all zero-style values such as `00` count as zero, which
   also falls back): `GEMINI_MAX_DIFF_CHARS` non-numeric, ≤0, or >15 digits → 30000;
   `GEMINI_TIMEOUT` non-numeric, ≤0, or >2 digits → 20; subject/body knobs below need
   ≤0, non-numeric, or >3 digits to fall back. `git diff` runs with `--no-ext-diff --no-textconv`
-  so user config/textconv drivers can't alter or leak the payload; `--stat` is capped.
+  so user config/textconv drivers can't alter or leak the payload; `--stat` is capped at
+  4000 bytes (byte-accurate `wc -c` precheck; a possibly partial first tail line is dropped on cut).
 - Output: Conventional Commits, subject ≤50 chars (`GEMINI_MAX_SUBJECT_CHARS`, cut at a
   word boundary) and body wrapped at 75 cols (`GEMINI_BODY_WRAP_CHARS`), both enforced after
   the API response — not merely requested in the prompt; non-numeric, ≤0 (incl. 00-style),

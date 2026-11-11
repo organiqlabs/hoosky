@@ -1,2 +1,2 @@
-1713d78710fedd2c26c82ea81f028148faf18920fe05779ce74c5262c587ec42  prepare-commit-msg
+deb48af8d0df8e08262333e7e05e28fb2afe40772e4e08b2d58ebec5197bf60b  prepare-commit-msg
 e9396779dc400c452fa73a2d78a317d8202ab65b7a4bbd8fa1f1c60a95f9ccec  install.sh

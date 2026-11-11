@@ -13,7 +13,7 @@ COMMIT_SOURCE="${2:-}"
 # mis-cuts multibyte (UTF-8) subjects/bodies. Fall back to the inherited
 # locale when no UTF-8 locale is available (best effort).
 for _loc in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8; do
-  if [ "$(printf 'é' | LC_ALL="$_loc" wc -m 2>/dev/null | tr -d ' ')" = "1" ]; then
+  if [ "$(printf '\303\251' | LC_ALL="$_loc" wc -m 2>/dev/null | tr -d ' ')" = "1" ]; then
     LC_ALL="$_loc"; export LC_ALL; break
   fi
 done

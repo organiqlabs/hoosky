@@ -1,6 +1,9 @@
 # Editor/OS droppings
 *.swp
 .DS_Store
+.opencode/
+.specify/
+.freebuff/
 
 # prepare-commit-msg sibling temp files (same-dir temp + mv abort path).
 # Rarely fires: siblings live next to the commit-msg file, normally inside .git/.

@@ -56,12 +56,22 @@ or build. Don't invent toolchain commands. This repo is published as
   credential. Keep these intact — they exist so secrets never reach the API.
   `prepare-commit-msg.test.sh` has sentinel matrix tests for them (`# 16`).
 - API key goes to curl via `-K -` on stdin, never argv (keeps it out of `ps`). Don't "simplify" this.
-- Diff truncates to `GEMINI_MAX_DIFF_CHARS` (default 30000, cut at a line boundary — or kept as a
-  raw slice with a different NOTE wording when the first `GEMINI_MAX_DIFF_CHARS` characters contain no newline);
+- Diff cap is derived from an **input-token budget**, not a blind constant:
+  `cap_chars = GEMINI_MAX_INPUT_TOKENS * 3 - 6000` (floored at 2000), because the diff has to fit
+  the plan tier's input quota — a fixed 30000 chars can blow a free-tier per-minute budget and
+  surface as a silent `no message generated`. `GEMINI_MAX_INPUT_TOKENS` default 8000 (⇒ 18000-char
+  cap); the 3 chars/token ratio is deliberately conservative (code tokenizes denser than prose, so
+  under-estimating truncates early rather than risking a rejected request). Raise it for a paid
+  tier; the NOTE names the budget so a truncated payload is self-explaining.
+  `GEMINI_MAX_DIFF_CHARS`, when set, is a manual override that may only **narrow**: a value above
+  the derived cap is clamped down to it (the token budget is a hard ceiling), so a stale large
+  value cannot silently push the request past the quota. Truncation itself is unchanged: cut at a
+  line boundary, or a raw slice with different NOTE wording when no newline exists in the cut.
   `GEMINI_MODEL` default `gemini-3.5-flash-lite` (validated against `A-Za-z0-9._-`; anything else
   warns and falls back); `GEMINI_TIMEOUT` default 20s (over 2 digits ⇒ 20).
   Env-var fallback rules (all zero-style values such as `00` count as zero, which
-  also falls back): `GEMINI_MAX_DIFF_CHARS` non-numeric, ≤0, or >15 digits → 30000;
+  also falls back): `GEMINI_MAX_INPUT_TOKENS` non-numeric, ≤0, or >9 digits → 8000;
+  `GEMINI_MAX_DIFF_CHARS` non-numeric, ≤0, or >15 digits → the token-derived cap;
   `GEMINI_TIMEOUT` non-numeric, ≤0, or >2 digits → 20; subject/body knobs below need
   ≤0, non-numeric, or >3 digits to fall back. `git diff` runs with `--no-ext-diff --no-textconv`
   so user config/textconv drivers can't alter or leak the payload; `--stat` is capped at

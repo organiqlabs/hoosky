@@ -67,16 +67,26 @@ reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=
 | -------------------------- | ----------------------- | --------------------------------------------------- |
 | `GEMINI_API_KEY`           | —                       | Required. Sent to curl via stdin config, never argv |
 | `GEMINI_MODEL`             | `gemini-3.5-flash-lite` | Model ID                                            |
-| `GEMINI_MAX_DIFF_CHARS`    | `30000`                 | Diff is truncated at a line boundary                |
+| `GEMINI_MAX_INPUT_TOKENS`  | `8000`                  | Input token budget; derives the diff cap            |
+| `GEMINI_MAX_DIFF_CHARS`    | (derived: `18000`)      | Manual cap override; may only narrow the budget     |
 | `GEMINI_TIMEOUT`           | `20`                    | Seconds before curl gives up                        |
 | `GEMINI_MAX_SUBJECT_CHARS` | `60`                    | Subject limit; cut at a word boundary               |
 | `GEMINI_BODY_WRAP_CHARS`   | `90`                    | Body wrap width                                     |
 | `GEMINI_DETAIL_LEVEL`      | `minimal`               | Detail tier: `minimal` \| `standard` \| `detailed`  |
 
 Knob fallbacks: values that are non-numeric, zero-style (e.g. `00`), or oversized fall back to the
-default (`>15`-digit diff, `>2`-digit timeout, `>3`-digit subject/body). An invalid `GEMINI_MODEL`
-id warns and falls back to `gemini-3.5-flash-lite`. If the first `GEMINI_MAX_DIFF_CHARS` characters
-(default 30000) of the diff contain no newline, the raw slice is used and the truncation note says so. API responses over 10 MiB are refused by curl.
+default (`>9`-digit token budget, `>15`-digit diff, `>2`-digit timeout, `>3`-digit subject/body). An invalid `GEMINI_MODEL`
+id warns and falls back to `gemini-3.5-flash-lite`.
+
+The diff cap is derived from the input token budget rather than fixed, so it tracks your plan
+tier: `cap = GEMINI_MAX_INPUT_TOKENS * 3 - 6000`, floored at 2000 characters. The default 8000
+tokens yields an 18000-character cap. The 3 chars/token ratio is conservative on purpose (code
+tokenizes denser than prose), so the hook truncates a little early rather than risk a request the
+API rejects. **On a free tier, lower `GEMINI_MAX_INPUT_TOKENS`; on a paid tier, raise it.**
+Setting `GEMINI_MAX_DIFF_CHARS` explicitly overrides the derived value but can only narrow it — a
+larger value is clamped down, because the token budget is the hard ceiling. If the cap falls
+mid-line, the raw slice is used and the truncation note says so; the note also names the token
+budget that caused the cut. API responses over 10 MiB are refused by curl.
 
 Staged secret/credential material is excluded from the diff sent to the API, matched
 at any depth (root and nested), case-insensitively: `.env`, `.env.*` and `.envrc`

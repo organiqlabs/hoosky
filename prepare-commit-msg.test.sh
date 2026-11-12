@@ -484,6 +484,70 @@ for t in 0 abc 100; do
   if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts)'; then ok "GEMINI_TIMEOUT=$t falls back"; else bad "GEMINI_TIMEOUT=$t (rc=$rc)"; fi
 done
 
+# 17b. Input-token budget derives the diff cap (tier-aware, not a blind constant).
+# cap = tokens*3 - 6000 overhead, floored at 2000.
+make_bigdiff() {  # <name> -> repo with a diff far larger than every cap under test
+  local d="$ROOT/bigdiff-$1"; mkdir -p "$d"
+  git -C "$d" init -q
+  git -C "$d" config user.email test@example.com
+  git -C "$d" config user.name test
+  printf 'base\n' > "$d/file.txt"
+  git -C "$d" add . && git -C "$d" commit -qm 'init'
+  # ~300k chars, comfortably above the largest derived cap (294000): a fixture smaller
+  # than the cap would leave nothing to truncate and emit no NOTE, passing vacuously.
+  for i in $(seq 1 5000); do printf 'padding line number %s with extra words to fill space here\n' "$i"; done >> "$d/file.txt"
+  git -C "$d" add file.txt
+  printf '%s' "$d"
+}
+for spec in 5000:9000 8000:18000 20000:54000 100000:294000; do
+  toks="${spec%%:*}"; want="${spec##*:}"
+  r=$(make_bigdiff "tok-$toks"); m=$(fresh_msg "$r")
+  rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" \
+         CAPTURE_FILE="$r/prompt.json" GEMINI_MAX_INPUT_TOKENS="$toks")
+  jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt"
+  if [ "$rc" = 0 ] && grep -q "${want} characters" "$r/prompt.txt" \
+    && grep -q "input budget ${toks} tokens" "$r/prompt.txt"; then
+    ok "token budget ${toks} -> ${want}-char diff cap"
+  else bad "token budget ${toks} -> ${want}-char diff cap (rc=$rc)"; fi
+done
+# A tiny budget must floor rather than produce a zero/negative cap (which would send no diff).
+r=$(make_bigdiff tiny); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" \
+       CAPTURE_FILE="$r/prompt.json" GEMINI_MAX_INPUT_TOKENS=1000)
+jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt"
+if [ "$rc" = 0 ] && grep -q '2000 characters' "$r/prompt.txt" \
+  && grep -q 'diff --git' "$r/prompt.txt"; then
+  ok "tiny token budget floors at 2000 chars (diff still sent)"
+else bad "tiny token budget floors at 2000 chars (rc=$rc)"; fi
+# The token budget is a hard ceiling: an explicit larger GEMINI_MAX_DIFF_CHARS is clamped.
+r=$(make_bigdiff clamp); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" \
+       CAPTURE_FILE="$r/prompt.json" GEMINI_MAX_INPUT_TOKENS=8000 GEMINI_MAX_DIFF_CHARS=999999)
+jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt"
+if [ "$rc" = 0 ] && grep -q '18000 characters' "$r/prompt.txt" \
+  && ! grep -q '999999 characters' "$r/prompt.txt"; then
+  ok "explicit MAX_DIFF_CHARS above the token budget is clamped down"
+else bad "explicit MAX_DIFF_CHARS clamped to token budget (rc=$rc)"; fi
+# A smaller explicit cap below the budget still wins (it only narrows).
+r=$(make_bigdiff narrow); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" \
+       CAPTURE_FILE="$r/prompt.json" GEMINI_MAX_INPUT_TOKENS=8000 GEMINI_MAX_DIFF_CHARS=4000)
+jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt"
+if [ "$rc" = 0 ] && grep -q '4000 characters' "$r/prompt.txt"; then
+  ok "explicit MAX_DIFF_CHARS below the budget still narrows"
+else bad "explicit MAX_DIFF_CHARS below the budget (rc=$rc)"; fi
+# Non-numeric / zero / absurd token budgets fall back to 8000 (never a broken arithmetic).
+for bad in abc 0 -5 99999999999999999999; do
+  r=$(make_bigdiff "badtok-$(printf '%s' "$bad" | tr -c 'a-zA-Z0-9' '_')"); m=$(fresh_msg "$r")
+  rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" \
+         CAPTURE_FILE="$r/prompt.json" GEMINI_MAX_INPUT_TOKENS="$bad")
+  jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt"
+  if [ "$rc" = 0 ] && grep -q '18000 characters' "$r/prompt.txt" \
+    && ! grep -q 'integer expression' "$ROOT/stderr"; then
+    ok "GEMINI_MAX_INPUT_TOKENS=$bad falls back to 8000"
+  else bad "GEMINI_MAX_INPUT_TOKENS=$bad falls back to 8000 (rc=$rc)"; fi
+done
+
 # 18. Multi-part response: parts are concatenated in order
 cat > "$ROOT/two.json" <<'JSON'
 {"candidates":[{"content":{"parts":[{"text":"feat(x): two"},{"text":" parts joined"}]}}]}
@@ -851,15 +915,17 @@ if grep -qx 'set -u' "$HOOK" \
   ok "hook sets -u, never sets -e, traps INT/TERM to 130/143"
 else bad "hook sets -u, never sets -e, traps INT/TERM to 130/143"; fi
 
-# 41. Unset knobs: the defaults are actually used (--max-time 20; default cut at 30000)
+# 41. Unset knobs: the defaults are actually used (--max-time 20; diff cap derived from
+# the 8000-token input budget: 8000*3-6000 = 18000 chars)
 r=$(make_repo unsetdefaults); m=$(fresh_msg "$r")
 for i in $(seq 1 1000); do printf 'padding line number %s with extra words to fill space here\n' "$i"; done >> "$r/file.txt"
 git -C "$r" add file.txt
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" ARGV_LOG="$r/argv.txt" CAPTURE_FILE="$r/prompt.json")
 jq -r '.contents[0].parts[0].text' "$r/prompt.json" 2>/dev/null > "$r/prompt.txt"
 if [ "$rc" = 0 ] && grep -A1 -- '--max-time' "$r/argv.txt" | tail -1 | grep -qx '20' \
-  && grep -q '30000 characters' "$r/prompt.txt"; then
-  ok "unset GEMINI_TIMEOUT/GEMINI_MAX_DIFF_CHARS default to 20 / 30000"
+  && grep -q '18000 characters' "$r/prompt.txt" \
+  && grep -q 'input budget 8000 tokens' "$r/prompt.txt"; then
+  ok "unset knobs: --max-time 20, diff cap derived from 8000-token budget (18000 chars)"
 else bad "unset knobs default (rc=$rc)"; fi
 
 # 42. Greedy wrap boundary: <= width stays on one line, > width wraps

@@ -19,14 +19,46 @@ for _loc in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8; do
 done
 
 MODEL="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
-MAX_DIFF_CHARS="${GEMINI_MAX_DIFF_CHARS:-30000}"
+MAX_DIFF_CHARS="${GEMINI_MAX_DIFF_CHARS:-}"
+MAX_INPUT_TOKENS="${GEMINI_MAX_INPUT_TOKENS:-8000}"
 TIMEOUT="${GEMINI_TIMEOUT:-20}"
 MAX_SUBJECT_CHARS="${GEMINI_MAX_SUBJECT_CHARS:-60}"
 BODY_WRAP_CHARS="${GEMINI_BODY_WRAP_CHARS:-90}"
-case "$MAX_DIFF_CHARS" in ''|*[!0-9]*) MAX_DIFF_CHARS=30000 ;; esac
-[ "${#MAX_DIFF_CHARS}" -gt 15 ] && MAX_DIFF_CHARS=30000
-MAX_DIFF_CHARS=$((10#$MAX_DIFF_CHARS))
-[ "$MAX_DIFF_CHARS" -le 0 ] && MAX_DIFF_CHARS=30000
+# --- Input budget ------------------------------------------------------------
+# The diff cap must reflect the model tier's INPUT token quota, not a fixed character
+# count: 30000 chars is harmless on a large-context paid model and can blow a free-tier
+# per-minute input quota outright, which surfaces as a silent "no message generated".
+# Derive the character cap from a token budget instead, using a deliberately
+# conservative 3 chars/token (code/diff text tokenizes denser than prose, and
+# under-estimating the budget truncates early rather than risking a rejected request).
+# GEMINI_MAX_DIFF_CHARS, when set, remains an explicit manual override of the derived
+# value — it is a hard ceiling, never a widening of the token budget.
+CHARS_PER_TOKEN=3
+# Room reserved for the fixed prompt boilerplate, stat block, branch/recent subjects
+# and the model's own output, so the diff never consumes the entire context.
+PROMPT_OVERHEAD_CHARS=6000
+
+case "$MAX_INPUT_TOKENS" in ''|*[!0-9]*) MAX_INPUT_TOKENS=8000 ;; esac
+[ "${#MAX_INPUT_TOKENS}" -gt 9 ] && MAX_INPUT_TOKENS=8000
+MAX_INPUT_TOKENS=$((10#$MAX_INPUT_TOKENS))
+[ "$MAX_INPUT_TOKENS" -le 0 ] && MAX_INPUT_TOKENS=8000
+
+TOKEN_DERIVED_CHARS=$((MAX_INPUT_TOKENS * CHARS_PER_TOKEN - PROMPT_OVERHEAD_CHARS))
+# A tiny budget would leave no room for a diff at all; floor it so a misconfigured
+# (but numeric) value still produces a usable, if heavily truncated, request.
+[ "$TOKEN_DERIVED_CHARS" -lt 2000 ] && TOKEN_DERIVED_CHARS=2000
+
+if [ -n "$MAX_DIFF_CHARS" ]; then
+  case "$MAX_DIFF_CHARS" in ''|*[!0-9]*) MAX_DIFF_CHARS=$TOKEN_DERIVED_CHARS ;; esac
+  [ "${#MAX_DIFF_CHARS}" -gt 15 ] && MAX_DIFF_CHARS=$TOKEN_DERIVED_CHARS
+  MAX_DIFF_CHARS=$((10#$MAX_DIFF_CHARS))
+  [ "$MAX_DIFF_CHARS" -le 0 ] && MAX_DIFF_CHARS=$TOKEN_DERIVED_CHARS
+else
+  MAX_DIFF_CHARS=$TOKEN_DERIVED_CHARS
+fi
+# The token budget is a hard ceiling: an explicitly larger char cap is clamped to it
+# so a stale GEMINI_MAX_DIFF_CHARS cannot silently push the request past the tier quota.
+[ "$MAX_DIFF_CHARS" -gt "$TOKEN_DERIVED_CHARS" ] && MAX_DIFF_CHARS=$TOKEN_DERIVED_CHARS
 case "$TIMEOUT" in ''|*[!0-9]*) TIMEOUT=20 ;; esac
 [ "${#TIMEOUT}" -gt 2 ] && TIMEOUT=20
 TIMEOUT=$((10#$TIMEOUT))
@@ -136,12 +168,13 @@ DIFF="$FULL_DIFF"
 if [ "${#FULL_DIFF}" -gt "$MAX_DIFF_CHARS" ]; then
   CUT="${FULL_DIFF:0:$MAX_DIFF_CHARS}"
   TRIMMED="${CUT%"${CUT##*$'\n'}"}"   # keep only complete lines
+  BUDGET_HINT="input budget ${MAX_INPUT_TOKENS} tokens"
   if [ -n "$TRIMMED" ]; then
     DIFF="$TRIMMED"
-    NOTE="(Diff truncated to the first ${MAX_DIFF_CHARS} characters; cut at a line boundary.)"
+    NOTE="(Diff truncated to the first ${MAX_DIFF_CHARS} characters (${BUDGET_HINT}); cut at a line boundary.)"
   else
     DIFF="$CUT"                       # no newline in cut: keep raw slice
-    NOTE="(Diff truncated to the first ${MAX_DIFF_CHARS} characters; no line boundary in the cut.)"
+    NOTE="(Diff truncated to the first ${MAX_DIFF_CHARS} characters (${BUDGET_HINT}); no line boundary in the cut.)"
   fi
 fi
 case "$DIFF" in *$'\n') ;; *) DIFF="$DIFF"$'\n' ;; esac
@@ -191,7 +224,7 @@ A commit message is permanent technical documentation. Explain *why* a change is
 
 Respond in plain text only. Do NOT use markdown, code fences, backticks, or any formatting. Output ONLY the commit message itself — no preamble, no explanation, no commentary before or after.
 
-Structure the message as a subject line with an imperative verb (max ${MAX_SUBJECT_CHARS} characters), then a blank line, then the body (wrapped at ${BODY_WRAP_CHARS} columns).
+Structure the message as a subject with an imperative verb (max ${MAX_SUBJECT_CHARS} characters), then a blank line, then the body (wrapped at ${BODY_WRAP_CHARS} columns).
 
 Use Conventional Commits: type(scope): summary (feat, fix, docs, style, refactor, perf, test, build, ci, chore). Never end the subject with a period. Name only files, symbols, and issue numbers that appear in the diff below.
 

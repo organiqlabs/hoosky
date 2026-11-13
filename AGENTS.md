@@ -94,7 +94,7 @@ or build. Don't invent toolchain commands. This repo is published as
 - `bash -n prepare-commit-msg`
 - `bash prepare-commit-msg.test.sh` — prints `all tests passed (N tests)` and exits 0 (or
   `FAILURES (N tests)` and exits 1). Deps: git/jq + POSIX tools (seq, awk, sed, wc, tr,
-  sort, ln, chmod, mktemp, cmp, sha1sum, mkfifo, id, env, cp, dirname, cat, head, tail);
+  sort, ln, chmod, mktemp, cmp, sha1sum (or `shasum -a 1`), mkfifo, id, env, cp, dirname, cat, head, tail);
   the `awk`/`cmp`/`sha1sum` are not coreutils. Stubs `curl` in scratch PATHs, never touches
   the network; runs in temp git repos with `GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null`.
 - `bash -n install.sh` and `bash install.test.sh` — installer suite; stubs `curl` the same

@@ -10,11 +10,6 @@
   - **Source**: architectural-layering
   - **Details**: `checksums.txt:1-2` publishes hashes for the hook and the installer, but `install.sh:149` only ever reads the row for `$HOOK_NAME`, so the `install.sh` row is consumed by nothing, and no script compares either row against worktree bytes. `AGENTS.md:11-12` leaves regeneration as a hand-run `sha256sum` command. `install.test.sh:34-39` serves both artifacts from the same tree on purpose (`:6-7`), so the pair is self-consistent by construction and cannot catch drift: edit and tag without regenerating, and both suites stay green while every install of that tag dies at `install.sh:180-182`.
 
-- [ ] **Make the set -e tripwire catch set -eu and stop pinning hook source text**
-  - **File**: `prepare-commit-msg.test.sh`
-  - **Source**: architectural-layering
-  - **Details**: Test #40 (`:911-914`) matches `^set -[A-Za-z]*e\b`; `set -eu` and `set -euo pipefail` do not match because no word boundary exists between `e` and `u`, so the canonical way to break the never-block-a-commit contract (`AGENTS.md:32-34`) passes the gate. In the other direction `grep -qx 'set -u'` reds on a benign `set -u -o pipefail`, and the sibling tripwires at `:1104` and `:1113` pin literal source strings such as `git log -5 --pretty=format:'%s' 2>/dev/null || true`, so behavior-preserving rewrites of the hook break the suite.
-
 - [ ] **Point the dogfooding refresh at the hooksPath-resolved directory**
   - **File**: `README.md`
   - **Source**: architectural-layering
@@ -47,22 +42,10 @@
   - **Source**: large-system-architecture
   - **Details**: `global_post_action` (`install.sh:130-136`) sets `core.hooksPath` machine-wide and only notes it on stderr; once set, git never looks at `$GIT_DIR/hooks`, so every repo using husky, lefthook, or `pre-commit install` is silently disabled. `--uninstall` (`:211-215`, `:141-144`) removes the file but deliberately leaves the config pointing at the now-empty directory, so uninstalling leaves every other hook on the machine dead. `install.test.sh` #10 (`:139`) pins this leave-config-alone behavior as correct, so the suite locks in the hazard instead of flagging it.
 
-- [ ] **Fall back to shasum in the hook suite so file-integrity assertions cannot pass vacuously on macOS**
-  - **File**: `prepare-commit-msg.test.sh`
-  - **Source**: large-system-architecture
-  - **Details**: `before=$(sha1sum "$m")` and `after=...` at `prepare-commit-msg.test.sh:692-696` and `:832-834` have no `shasum` fallback, unlike `install.sh:158-163`. On macOS both values are empty, so `[ "$before" = "$after" ]` is true whether or not the hook rewrote the file, turning the integrity half of tests #28 and #35 into a false green. `AGENTS.md:4` calls this a POSIX-only harness and `README.md:115` claims BSD/macOS support, so a contributor there gets `all tests passed` with the safety net disabled.
-
 - [ ] **Add SPDX identifiers and copyright notices to the four bash files**
   - **File**: `prepare-commit-msg`
   - **Source**: formatting-style
   - **Details**: All four headers are purpose comments only — `prepare-commit-msg:1-5`, `install.sh:1-6`, `prepare-commit-msg.test.sh:1-8`, `install.test.sh:1-8` — with no `SPDX-License-Identifier: MIT` and no copyright line. `install.sh:232-233` copies the hook into a hooks directory, so the primary distributed artifact travels far from `LICENSE`. `LICENSE:12-13` requires the notice in all copies or substantial portions, so every installed hook currently ships without it and no REUSE/SPDX tooling can resolve the license from the file.
-
-- [ ] **Pin install.test.sh to LF in .gitattributes like its siblings**
-  - **File**: `.gitattributes`
-  - **Source**: formatting-style
-  - **Details**: `.gitattributes:3-5` pins `prepare-commit-msg`, `prepare-commit-msg.test.sh`, and `install.sh`, but `install.test.sh` appears only at `:12` with `export-ignore`, and `git check-attr text eol install.test.sh` reports both as unspecified. On a `core.autocrlf=true` clone the file checks out CRLF, `bash -n` still exits 0, and running it fails with `invalid option` plus an arithmetic syntax error; direct execution fails with `env: 'bash\r': No such file or directory`. That breaks the Verify step at `AGENTS.md:100` and contradicts this file's own promise at `:1-2`.
-  - **Sub-tasks**:
-    - [ ] Consider replacing the per-file lines with `*.sh text eol=lf` plus explicit entries for the extensionless scripts
 
 - [ ] **Extract the five copy-pasted numeric-knob normalizations into one helper**
   - **File**: `prepare-commit-msg`

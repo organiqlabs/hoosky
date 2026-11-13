@@ -270,6 +270,15 @@ unchanged() {  # <msgfile> <name>: pass if file still holds only git's comment b
   if ! grep -qE '^[^#[:space:]]' "$1" && grep -q '^# Please enter' "$1"; then ok "$2"; else bad "$2"; fi
 }
 
+# sha1sum is GNU coreutils; macOS/BSD ship shasum instead. Without one of them both
+# hashes come back empty and every "message unchanged" assertion passes vacuously.
+command -v sha1sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 \
+  || { printf 'need sha1sum or shasum for the file-integrity checks\n' >&2; exit 1; }
+hash_file() {  # <file> -> sha1 hex
+  if command -v sha1sum >/dev/null 2>&1; then sha1sum "$1" | awk '{ print $1 }'
+  else shasum -a 1 "$1" | awk '{ print $1 }'; fi
+}
+
 # 1. SKIP_AI_COMMIT with key+PATH set: bypass before any git/curl call
 r=$(make_repo skip); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" SKIP_AI_COMMIT=1 GEMINI_API_KEY=fake PATH="$LOGGIT:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/p.json" GIT_LOG="$r/git.log")
@@ -689,11 +698,11 @@ else bad "stat section capped at 4000 bytes (rc=$rc, full=$full)"; fi
 # 28. Failure paths warn + exit 0: unreadable msg file; unwritable msg dir (skipped as root)
 if [ "$(id -u)" != 0 ]; then
   r=$(make_repo unread); m=$(fresh_msg "$r")
-  before=$(sha1sum "$m")
+  before=$(hash_file "$m")
   chmod 000 "$m"
   rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin")
   chmod 644 "$m"
-  after=$(sha1sum "$m")
+  after=$(hash_file "$m")
   if [ "$rc" = 0 ] && grep -q 'not readable' "$ROOT/stderr" && [ "$before" = "$after" ]; then
     ok "unreadable message file: warns, exits 0, leaves file unchanged"
   else bad "unreadable message file: warns, exits 0, leaves file unchanged (rc=$rc)"; fi
@@ -829,9 +838,9 @@ exit 1
 EOF
 chmod +x "$MV_FAIL/mv"
 r=$(make_repo mvfail); m=$(fresh_msg "$r")
-before=$(sha1sum "$m")
+before=$(hash_file "$m")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$MV_FAIL:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
-after=$(sha1sum "$m")
+after=$(hash_file "$m")
 if [ "$rc" = 0 ] && grep -q 'could not write' "$ROOT/stderr" && [ "$before" = "$after" ] \
   && ! compgen -G "$r/COMMIT_EDITMSG.ai-commit.*" >/dev/null; then
   ok "mv failure: warns, exits 0, sibling cleaned, msg unchanged"
@@ -907,9 +916,11 @@ if [ "$rc" = 0 ] && printf '%s' "$stat_sec" | grep -q 'file.txt'; then
   ok "stat section (no cut) keeps filenames"
 else bad "stat section (no cut) keeps filenames (rc=$rc)"; fi
 
-# 40. Contract tripwire: set -u only, never set -e; INT/TERM traps present
-if grep -qx 'set -u' "$HOOK" \
-  && ! grep -qE '^set -[A-Za-z]*e\b|^set +-o +errexit' "$HOOK" \
+# 40. Contract tripwire: set -u in effect, never errexit — in any spelling (-e, -eu,
+# -euo pipefail, -o errexit); INT/TERM traps present. Cluster letter order must not
+# matter: `set -eu` is the canonical way to break the never-block-a-commit contract.
+if grep -qE '^[[:space:]]*set[[:space:]]+(-[A-Za-z]*u|-o[[:space:]]+nounset)' "$HOOK" \
+  && ! grep -qE '^[[:space:]]*set[[:space:]]+(-[A-Za-z]*e|-o[[:space:]]+errexit)' "$HOOK" \
   && grep -qF "trap 'exit 130' INT" "$HOOK" \
   && grep -qF "trap 'exit 143' TERM" "$HOOK"; then
   ok "hook sets -u, never sets -e, traps INT/TERM to 130/143"
@@ -1098,25 +1109,6 @@ braces="$(printf '%s' "$heredoc" | grep -o '\${' | wc -l)"
 [ "$dollars" -eq "$braces" ] || hs_ok=0
 [ -n "$heredoc" ] || hs_ok=0
 if [ "$hs_ok" = 1 ]; then ok "prompt heredoc is shell-safe (no backticks/CR/bare \$)"; else bad "prompt heredoc is shell-safe (no backticks/CR/bare \$)"; fi
-
-# Root-commit guard, source-level: the recent-subjects capture must keep swallowing both the
-# nonzero exit and the 'fatal: ... does not have any commits yet' stderr from git log.
-if grep -qF "git log -5 --pretty=format:'%s' 2>/dev/null || true" "$HOOK"; then
-  ok "recent-subjects capture tolerates a failed git log (unborn HEAD)"
-else
-  bad "recent-subjects capture tolerates a failed git log (unborn HEAD)"
-fi
-
-# BRANCH must never be spliced in blank: detached HEAD (empty --show-current,
-# exit 0) needs the rev-parse/short-SHA fallback, and an unreadable repo must not
-# leave a dangling 'Branch:' with nothing after it.
-if grep -qF 'git rev-parse --abbrev-ref HEAD' "$HOOK" \
-  && grep -qF 'git rev-parse --short HEAD' "$HOOK" \
-  && grep -qF 'detached at ' "$HOOK"; then
-  ok "BRANCH detached-HEAD fallback present (abbrev-ref + short SHA)"
-else
-  bad "BRANCH detached-HEAD fallback present (abbrev-ref + short SHA)"
-fi
 
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"

@@ -22,8 +22,7 @@ MODEL="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
 MAX_DIFF_CHARS="${GEMINI_MAX_DIFF_CHARS:-}"
 MAX_INPUT_TOKENS="${GEMINI_MAX_INPUT_TOKENS:-8000}"
 TIMEOUT="${GEMINI_TIMEOUT:-20}"
-MAX_SUBJECT_CHARS="${GEMINI_MAX_SUBJECT_CHARS:-60}"
-BODY_WRAP_CHARS="${GEMINI_BODY_WRAP_CHARS:-90}"
+
 # --- Input budget ------------------------------------------------------------
 # The diff cap must reflect the model tier's INPUT token quota, not a fixed character
 # count: 30000 chars is harmless on a large-context paid model and can blow a free-tier
@@ -63,14 +62,6 @@ case "$TIMEOUT" in ''|*[!0-9]*) TIMEOUT=20 ;; esac
 [ "${#TIMEOUT}" -gt 2 ] && TIMEOUT=20
 TIMEOUT=$((10#$TIMEOUT))
 [ "$TIMEOUT" -le 0 ] && TIMEOUT=20
-case "$MAX_SUBJECT_CHARS" in ''|*[!0-9]*) MAX_SUBJECT_CHARS=60 ;; esac
-[ "${#MAX_SUBJECT_CHARS}" -gt 3 ] && MAX_SUBJECT_CHARS=60
-MAX_SUBJECT_CHARS=$((10#$MAX_SUBJECT_CHARS))
-[ "$MAX_SUBJECT_CHARS" -le 0 ] && MAX_SUBJECT_CHARS=60
-case "$BODY_WRAP_CHARS" in ''|*[!0-9]*) BODY_WRAP_CHARS=90 ;; esac
-[ "${#BODY_WRAP_CHARS}" -gt 3 ] && BODY_WRAP_CHARS=90
-BODY_WRAP_CHARS=$((10#$BODY_WRAP_CHARS))
-[ "$BODY_WRAP_CHARS" -le 0 ] && BODY_WRAP_CHARS=90
 
 warn() { printf 'ai-commit: %s\n' "$*" >&2; }
 DETAIL="${GEMINI_DETAIL_LEVEL:-minimal}"
@@ -220,13 +211,7 @@ RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 # the static text must contain NOTHING the shell would expand or substitute:
 # no bare $, no backticks, no \r. If you add static prompt text, keep it shell-clean.
 cat > "$TMP/prompt.txt" <<EOF
-A commit message is permanent technical documentation. Explain *why* a change is necessary with precision.
-
-Respond in plain text only. Do NOT use markdown, code fences, backticks, or any formatting. Output ONLY the commit message itself — no preamble, no explanation, no commentary before or after.
-
-Structure the message as a subject with an imperative verb (max ${MAX_SUBJECT_CHARS} characters), then a blank line, then the body (wrapped at ${BODY_WRAP_CHARS} columns).
-
-Use Conventional Commits: type(scope): summary (feat, fix, docs, style, refactor, perf, test, build, ci, chore). Never end the subject with a period. Name only files, symbols, and issue numbers that appear in the diff below.
+A commit message is permanent technical documentation, make a well formatted **Subject<=60/Body<=82 wrapped line rule** commit. `<subject line>\n<single paragraph of technical reasoning>`.
 
 Required detail level (${DETAIL}): ${DETAIL_TEXT}
 
@@ -274,19 +259,6 @@ SUBJ="${MSG%%$'\n'*}"
 REM="${MSG#"$SUBJ"}"
 BODY="${REM#$'\n'}"
 BODY="$(printf '%s' "$BODY" | sed -e '/[^[:space:]]/,$!d')"   # collapse leading blank lines
-if [ "${#SUBJ}" -gt "$MAX_SUBJECT_CHARS" ]; then
-  CUT="${SUBJ:0:$MAX_SUBJECT_CHARS}"
-  TRIMMED="${CUT% *}"             # cut back to the last word boundary
-  [ -z "$TRIMMED" ] && TRIMMED="$CUT"
-  warn "subject exceeds ${MAX_SUBJECT_CHARS} chars; truncated"
-  SUBJ="$TRIMMED"
-fi
-if [ -n "$BODY" ]; then
-  WRAPPED="$(printf '%s\n' "$BODY" | wrap_text "$BODY_WRAP_CHARS")"
-  MSG="$SUBJ"$'\n\n'"$WRAPPED"
-else
-  MSG="$SUBJ"
-fi
 
 # --- Prepend draft; atomic-ish write into the same directory as the msg file
 # mktemp template in the msg dir (same filesystem for mv; unpredictable name, no clobber)

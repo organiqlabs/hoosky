@@ -69,9 +69,7 @@ reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=
 | `GEMINI_MODEL`             | `gemini-3.5-flash-lite` | Model ID                                            |
 | `GEMINI_MAX_INPUT_TOKENS`  | `8000`                  | Input token budget; derives the diff cap            |
 | `GEMINI_MAX_DIFF_CHARS`    | (derived: `18000`)      | Manual cap override; may only narrow the budget     |
-| `GEMINI_TIMEOUT`           | `20`                    | Seconds before curl gives up                        |
-| `GEMINI_MAX_SUBJECT_CHARS` | `60`                    | Subject limit; cut at a word boundary               |
-| `GEMINI_BODY_WRAP_CHARS`   | `90`                    | Body wrap width                                     |
+| `GEMINI_TIMEOUT`           | `20`                    | Seconds before curl gives up                        |                                     |
 | `GEMINI_DETAIL_LEVEL`      | `minimal`               | Detail tier: `minimal` \| `standard` \| `detailed`  |
 
 Knob fallbacks: values that are non-numeric, zero-style (e.g. `00`), or oversized fall back to the

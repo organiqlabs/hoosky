@@ -50,9 +50,15 @@ never removes a `core.hooksPath` you configured yourself.
 
 The file is named `prepare-commit-msg`, and that's what it installs as — Git's
 `prepare-commit-msg` hook. It is not the `pre-commit.com` framework and not the
-sibling `organiqbit-hooks` TypeScript project. This repo has it installed at
-`.git/hooks/prepare-commit-msg` for dogfooding; refresh the installed copy after
-hook changes with `install -m755 prepare-commit-msg .git/hooks/prepare-commit-msg`.
+sibling `organiqbit-hooks` TypeScript project. For dogfooding, refresh the hook in the
+directory Git actually resolves for this repo. When `core.hooksPath` is set — the installer
+sets it globally by default — a copy in `.git/hooks` is shadowed and never runs:
+
+```sh
+install -m755 prepare-commit-msg "$(git rev-parse --git-path hooks)/prepare-commit-msg"
+```
+
+`git rev-parse --git-path hooks` resolves correctly with or without `core.hooksPath`.
 
 ## Use
 

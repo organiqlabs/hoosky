@@ -1,1 +1,0 @@
-../../.specify/extensions/pomona/.specify-dev/agent-commands/opencode/speckit.pomona.repair.md

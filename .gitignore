@@ -16,3 +16,8 @@
 # only when a repo sets hooksPath inside it.
 prepare-commit-msg.bak.*
 prepare-commit-msg.uninstalled.*
+
+# Local dev state: the pomona scan queue and its feature docs are regenerated
+# tooling output, not release material. Files stay on disk for /speckit.implement
+# but are never committed.
+specs/pomona/

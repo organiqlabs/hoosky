@@ -78,11 +78,11 @@ reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=
 | `GEMINI_MODEL`            | `gemini-3.5-flash-lite` | Model ID                                            |
 | `GEMINI_MAX_INPUT_TOKENS` | `8000`                  | Input token budget; derives the diff cap            |
 | `GEMINI_MAX_DIFF_CHARS`   | (derived: `18000`)      | Manual cap override; may only narrow the budget     |
-| `GEMINI_TIMEOUT`          | `20`                    | Seconds before curl gives up                        |     |
+| `GEMINI_TIMEOUT`          | `20`                    | Seconds before curl gives up                        |
 | `GEMINI_DETAIL_LEVEL`     | `minimal`               | Detail tier: `minimal` \| `standard` \| `detailed`  |
 
 Knob fallbacks: values that are non-numeric, zero-style (e.g. `00`), or oversized fall back to the
-default (`>9`-digit token budget, `>15`-digit diff, `>2`-digit timeout, `>3`-digit subject/body). An invalid `GEMINI_MODEL`
+default (`>9`-digit token budget, `>15`-digit diff, `>2`-digit timeout). An invalid `GEMINI_MODEL`
 id warns and falls back to `gemini-3.5-flash-lite`.
 
 The diff cap is derived from the input token budget rather than fixed, so it tracks your plan

@@ -7,6 +7,9 @@
 set -u
 
 ORG_REPO="organiqlabs/hoosky"
+# Single source of truth for the release version. The installer runs via `curl | bash`,
+# so the tag must be embedded here (it cannot read a sibling VERSION file). Bump this and
+# run `bash check-version.sh`; see RELEASING.md for the full release procedure.
 TAG="v1.0.0"
 RAW="https://raw.githubusercontent.com/${ORG_REPO}/${TAG}"
 HOOK_NAME="prepare-commit-msg"
@@ -14,13 +17,14 @@ HOOK_NAME="prepare-commit-msg"
 err()  { printf 'hoosky-install: %s\n' "$*" >&2; }
 
 usage() {
-  cat <<'EOF'
-hoosky installer — installs the prepare-commit-msg hook
+  # Unquoted heredoc so the examples follow TAG above; the one literal ${...} is escaped.
+  cat <<EOF
+hoosky installer — installs the prepare-commit-msg hook (release ${TAG})
 
 usage: install.sh [options]
 
   --global         install into the global git hooks directory (default); sets
-                   core.hooksPath globally to ${XDG_CONFIG_HOME:-~/.config}/git/hooks if unset
+                   core.hooksPath globally to \${XDG_CONFIG_HOME:-~/.config}/git/hooks if unset
   --dir PATH       install into the repo at PATH (repeatable)
   --all ROOT       discover repos under ROOT and install into each
   --uninstall      remove hoosky (only if the installed hook matches the published checksum)
@@ -31,11 +35,11 @@ Note: when core.hooksPath is set anywhere (global or local), --dir/--all install
 hooks directory git resolves for those repos (possibly a shared global dir), not .git/hooks.
 
 Examples:
-  curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash
-  curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash -s -- --global
-  curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash -s -- --dir ~/src/myrepo
-  curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash -s -- --all ~/src
-  curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash -s -- --uninstall
+  curl -fsSL https://raw.githubusercontent.com/${ORG_REPO}/${TAG}/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/${ORG_REPO}/${TAG}/install.sh | bash -s -- --global
+  curl -fsSL https://raw.githubusercontent.com/${ORG_REPO}/${TAG}/install.sh | bash -s -- --dir ~/src/myrepo
+  curl -fsSL https://raw.githubusercontent.com/${ORG_REPO}/${TAG}/install.sh | bash -s -- --all ~/src
+  curl -fsSL https://raw.githubusercontent.com/${ORG_REPO}/${TAG}/install.sh | bash -s -- --uninstall
 EOF
 }
 

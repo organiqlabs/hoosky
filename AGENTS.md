@@ -11,7 +11,9 @@ explicit form of the default) and `checksums.txt` (published sha256 of the hook 
 itself, read from the tag at install time; regenerate after any edit to `prepare-commit-msg`
 or `install.sh` with `sha256sum prepare-commit-msg install.sh > checksums.txt`). Git repo, branch `main`; no manifest, CI,
 or build. Don't invent toolchain commands. This repo is published as
-`organiqlabs/hoosky` — `install.sh` downloads the `v1.0.0` tag, not the worktree.
+`organiqlabs/hoosky` — `install.sh` downloads the release tag defined by `TAG` in
+`install.sh`, not the worktree. See `RELEASING.md` for the release procedure; `TAG` is the
+single source of truth and `bash check-version.sh` verifies docs match it.
 
 ## Identity
 

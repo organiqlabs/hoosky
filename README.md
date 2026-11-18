@@ -63,14 +63,14 @@ fifo message file, an unparseable or oversized API response, an unwritable messa
 a backend tool failure (mktemp/jq/mv), an unsafe or unset key — the hook prints a one-line
 reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=1`, `-m`/merge/squash/amend, a message file that already has content, or an empty staged diff it exits 0 silently. Either way, the commit behaves exactly as if the hook weren't installed.
 
-| Variable                   | Default                 | Meaning                                             |
-| -------------------------- | ----------------------- | --------------------------------------------------- |
-| `GEMINI_API_KEY`           | —                       | Required. Sent to curl via stdin config, never argv |
-| `GEMINI_MODEL`             | `gemini-3.5-flash-lite` | Model ID                                            |
-| `GEMINI_MAX_INPUT_TOKENS`  | `8000`                  | Input token budget; derives the diff cap            |
-| `GEMINI_MAX_DIFF_CHARS`    | (derived: `18000`)      | Manual cap override; may only narrow the budget     |
-| `GEMINI_TIMEOUT`           | `20`                    | Seconds before curl gives up                        |                                     |
-| `GEMINI_DETAIL_LEVEL`      | `minimal`               | Detail tier: `minimal` \| `standard` \| `detailed`  |
+| Variable                  | Default                 | Meaning                                             |
+| ------------------------- | ----------------------- | --------------------------------------------------- |
+| `GEMINI_API_KEY`          | —                       | Required. Sent to curl via stdin config, never argv |
+| `GEMINI_MODEL`            | `gemini-3.5-flash-lite` | Model ID                                            |
+| `GEMINI_MAX_INPUT_TOKENS` | `8000`                  | Input token budget; derives the diff cap            |
+| `GEMINI_MAX_DIFF_CHARS`   | (derived: `18000`)      | Manual cap override; may only narrow the budget     |
+| `GEMINI_TIMEOUT`          | `20`                    | Seconds before curl gives up                        |     |
+| `GEMINI_DETAIL_LEVEL`     | `minimal`               | Detail tier: `minimal` \| `standard` \| `detailed`  |
 
 Knob fallbacks: values that are non-numeric, zero-style (e.g. `00`), or oversized fall back to the
 default (`>9`-digit token budget, `>15`-digit diff, `>2`-digit timeout, `>3`-digit subject/body). An invalid `GEMINI_MODEL`
@@ -108,9 +108,12 @@ bash -n prepare-commit-msg        # syntax check
 bash -n install.sh                # syntax check (installer)
 bash prepare-commit-msg.test.sh   # hook suite; stubs curl, never touches the network
 bash install.test.sh              # installer suite; stubs curl, sandboxes HOME and git config
+bash check-version.sh             # every vX.Y.Z reference matches install.sh's TAG
 ```
 
 Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; plus required standard userland — `tr`/`sed`/`wc`/`tail`/`head`/`dirname`/`cat`/`mktemp`/`mv`/`chmod`/`rm`; unguarded tools degrade silently). The diff-stat cap uses `tail -c` and `dd` (POSIX) plus `od`/`wc`/`tr`, so it works on BSD/macOS without coreutils. No build, no CI, no manifest.
+
+Release procedure (bumping the tag, checksums, and docs): [RELEASING.md](RELEASING.md). `TAG` in `install.sh` is the single source of truth for the version.
 Repo conventions for agents: [AGENTS.md](AGENTS.md).
 
 ## License

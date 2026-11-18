@@ -43,15 +43,17 @@ validate_uint() {  # <value> <max_digits> <fallback> -> validated decimal on std
 # The diff cap must reflect the model tier's INPUT token quota, not a fixed character
 # count: 30000 chars is harmless on a large-context paid model and can blow a free-tier
 # per-minute input quota outright, which surfaces as a silent "no message generated".
-# Derive the character cap from a token budget instead, using a deliberately
-# conservative 3 chars/token (code/diff text tokenizes denser than prose, and
-# under-estimating the budget truncates early rather than risking a rejected request).
+# Derive the character cap from a token budget instead. The two constants below are
+# deliberately conservative HEURISTICS, not measurements of Gemini's tokenizer or of a
+# tier's real per-minute quota: they have never been validated against either. 3 chars/token
+# assumes code tokenizes denser than prose, and 6000 chars is a fixed cushion for the prompt
+# boilerplate, stat block, branch/recent subjects and the model's own output. The resulting
+# cap therefore truncates early on purpose rather than risk a rejected request; tune
+# GEMINI_MAX_INPUT_TOKENS empirically for your tier. See README.md ("Use").
 # GEMINI_MAX_DIFF_CHARS, when set, remains an explicit manual override of the derived
 # value — it is a hard ceiling, never a widening of the token budget.
-CHARS_PER_TOKEN=3
-# Room reserved for the fixed prompt boilerplate, stat block, branch/recent subjects
-# and the model's own output, so the diff never consumes the entire context.
-PROMPT_OVERHEAD_CHARS=6000
+CHARS_PER_TOKEN=3              # heuristic, not tokenizer-measured
+PROMPT_OVERHEAD_CHARS=6000     # heuristic cushion, not measured
 
 MAX_INPUT_TOKENS="$(validate_uint "$MAX_INPUT_TOKENS" 9 8000)"
 
@@ -218,7 +220,7 @@ RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 # the static text must contain NOTHING the shell would expand or substitute:
 # no bare $, no backticks, no \r. If you add static prompt text, keep it shell-clean.
 cat > "$TMP/prompt.txt" <<EOF
-A commit message is permanent technical documentation, make a well formatted **Subject<=60/Body<=82 wrapped line rule** commit. `<subject line>\n<single paragraph of technical reasoning>`.
+A commit message is permanent technical documentation, make a well formatted **Subject>=60/Body>=82 wrapped line rule** commit. `<subject line>\n<single paragraph of technical reasoning>`.
 
 Required detail level (${DETAIL}): ${DETAIL_TEXT}
 

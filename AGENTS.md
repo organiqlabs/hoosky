@@ -64,7 +64,10 @@ single source of truth and `bash check-version.sh` verifies docs match it.
   surface as a silent `no message generated`. `GEMINI_MAX_INPUT_TOKENS` default 8000 (⇒ 18000-char
   cap); the 3 chars/token ratio is deliberately conservative (code tokenizes denser than prose, so
   under-estimating truncates early rather than risking a rejected request). Raise it for a paid
-  tier; the NOTE names the budget so a truncated payload is self-explaining.
+  tier; the NOTE names the budget so a truncated payload is self-explaining. The `3` chars/token
+  ratio and `6000`-char overhead are **unmeasured heuristics**, not tokenizer/quota measurements;
+  keep describing them that way in docs and tune the budget empirically rather than claiming
+  exact accounting.
   `GEMINI_MAX_DIFF_CHARS`, when set, is a manual override that may only **narrow**: a value above
   the derived cap is clamped down to it (the token budget is a hard ceiling), so a stale large
   value cannot silently push the request past the quota. Truncation itself is unchanged: cut at a

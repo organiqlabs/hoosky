@@ -87,9 +87,13 @@ id warns and falls back to `gemini-3.5-flash-lite`.
 
 The diff cap is derived from the input token budget rather than fixed, so it tracks your plan
 tier: `cap = GEMINI_MAX_INPUT_TOKENS * 3 - 6000`, floored at 2000 characters. The default 8000
-tokens yields an 18000-character cap. The 3 chars/token ratio is conservative on purpose (code
-tokenizes denser than prose), so the hook truncates a little early rather than risk a request the
-API rejects. **On a free tier, lower `GEMINI_MAX_INPUT_TOKENS`; on a paid tier, raise it.**
+tokens yields an 18000-character cap. **This is a heuristic, not exact token accounting:** the
+`3` chars/token ratio and the `6000`-character overhead are conservative rules of thumb that
+have never been measured against Gemini's tokenizer or a real per-minute quota. The formula
+deliberately truncates early (code tokenizes denser than prose, and the cushion reserves room
+for the prompt and model output) rather than risk a request the API rejects. Treat the default
+as a safe starting point and tune `GEMINI_MAX_INPUT_TOKENS` empirically: **on a free tier,
+lower it; on a paid tier, raise it.**
 Setting `GEMINI_MAX_DIFF_CHARS` explicitly overrides the derived value but can only narrow it — a
 larger value is clamped down, because the token budget is the hard ceiling. If the cap falls
 mid-line, the raw slice is used and the truncation note says so; the note also names the token

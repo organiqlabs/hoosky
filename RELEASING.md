@@ -11,7 +11,7 @@ because the documented install path is `curl … | bash` — there is no sibling
 The `usage()` examples interpolate `${TAG}`, so they follow a bump automatically.
 
 Every other literal `vX.Y.Z` in the tree (currently the two GitHub URLs in `README.md`)
-must be kept in sync manually. `bash check-version.sh` fails if any tracked file disagrees
+must be kept in sync manually. `make check-version` fails if any tracked file disagrees
 with `TAG`. `AGENTS.md` deliberately names no version, so it never needs a bump.
 
 ## Preflight
@@ -36,29 +36,25 @@ Do not release from a dirty tree or from a branch other than `main`.
    install URL and the manual-download URL to `vX.Y.Z`. Then confirm nothing drifted:
 
    ```sh
-   bash check-version.sh      # all release references match TAG=vX.Y.Z
+   make check-version        # all release references match TAG=vX.Y.Z
    ```
 
 3. **Land the code changes** for the release (hook and/or installer). If `install.sh`
-   changed, re-check `bash install.sh --help` — the examples must show the new tag.
+   changed, re-check `make install ARGS='--help'` — the examples must show the new tag.
 
 4. **Regenerate the published checksums.** This is mandatory after _any_ edit to
    `prepare-commit-msg` or `install.sh`; a stale hash makes the installer reject the hook
    for every user:
 
    ```sh
-   sha256sum prepare-commit-msg install.sh > checksums.txt
-   sha256sum prepare-commit-msg install.sh | diff - checksums.txt
+   make checksums
    ```
 
-5. **Run every gate.** Stop on the first red check:
+5. **Run every gate.** Stop on the first red check — the Makefile is the single source of
+   truth for these commands:
 
    ```sh
-   bash -n prepare-commit-msg
-   bash -n install.sh
-   bash prepare-commit-msg.test.sh
-   bash install.test.sh
-   bash check-version.sh
+   make test
    ```
 
 6. **Commit** the hook, installer, docs, `checksums.txt`, and any `specs/pomona/tasks.md`
@@ -94,10 +90,10 @@ Do not release from a dirty tree or from a branch other than `main`.
 
 ## Checklist
 
-- [ ] `TAG` bumped; `bash check-version.sh` green
+- [ ] `TAG` bumped; `make check-version` green
 - [ ] `README.md` URLs updated
 - [ ] `checksums.txt` regenerated after the last hook/installer edit
-- [ ] All five gates green
+- [ ] `make test` green (all gates)
 - [ ] Commit contains everything above
 - [ ] Tag points at that commit and is pushed
 - [ ] Published tag verified from a clean directory

@@ -9,11 +9,11 @@ directory — sets `core.hooksPath` to `~/.config/git/hooks` globally after a su
 global install when unset; `--dir`/`--all` target specific repos; `--global` is the
 explicit form of the default) and `checksums.txt` (published sha256 of the hook and
 itself, read from the tag at install time; regenerate after any edit to `prepare-commit-msg`
-or `install.sh` with `sha256sum prepare-commit-msg install.sh > checksums.txt`). Git repo, branch `main`; no manifest, CI,
-or build. Don't invent toolchain commands. This repo is published as
+or `install.sh` with `make checksums`). Git repo, branch `main`; no CI or build beyond
+the Makefile. Don't invent toolchain commands. This repo is published as
 `organiqlabs/hoosky` — `install.sh` downloads the release tag defined by `TAG` in
 `install.sh`, not the worktree. See `RELEASING.md` for the release procedure; `TAG` is the
-single source of truth and `bash check-version.sh` verifies docs match it.
+single source of truth and `make check-version` verifies docs match it.
 
 ## Identity
 
@@ -93,15 +93,18 @@ single source of truth and `bash check-version.sh` verifies docs match it.
 
 ## Verify
 
-- Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; plus required standard userland:
+- `make test` is the single source of truth for all local gates (defined in `Makefile`);
+  `make help` lists the install/uninstall/checksums targets. Don't add a new install or test
+  command to the docs without adding a Makefile target first.
+- Deps: `bash`, `git`, `jq`, `grep`, `make` (curl at runtime; plus required standard userland:
   `tr`, `sed`, `wc`, `tail`, `head`, `dirname`, `cat`, `mktemp`, `mv`, `chmod`, `rm` — the
   unguarded ones degrade silently without blocking the commit).
-- `bash -n prepare-commit-msg`
-- `bash prepare-commit-msg.test.sh` — prints `all tests passed (N tests)` and exits 0 (or
-  `FAILURES (N tests)` and exits 1). Deps: git/jq + POSIX tools (seq, awk, sed, wc, tr,
-  sort, ln, chmod, mktemp, cmp, sha1sum (or `shasum -a 1`), mkfifo, id, env, cp, dirname, cat, head, tail);
-  the `awk`/`cmp`/`sha1sum` are not coreutils. Stubs `curl` in scratch PATHs, never touches
-  the network; runs in temp git repos with `GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null`.
-- `bash -n install.sh` and `bash install.test.sh` — installer suite; stubs `curl` the same
-  way and sandboxes `HOME`/`GIT_CONFIG_GLOBAL` per case, so it never touches the real home
-  or this machine's global git config.
+- `make test` runs `bash -n` on the hook, installer and checker, `check-version.sh`, both
+  suites, and a checksum recompute/diff. The hook suite prints `all tests passed (N tests)`
+  and exits 0 (or `FAILURES (N tests)` and exits 1). Deps: git/jq + POSIX tools (seq, awk,
+  sed, wc, tr, sort, ln, chmod, mktemp, cmp, sha1sum (or `shasum -a 1`), mkfifo, id, env, cp,
+  dirname, cat, head, tail); the `awk`/`cmp`/`sha1sum` are not coreutils. It stubs `curl` in
+  scratch PATHs, never touches the network, and runs in temp git repos with
+  `GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null`.
+- The installer suite stubs `curl` the same way and sandboxes `HOME`/`GIT_CONFIG_GLOBAL` per
+  case, so it never touches the real home or this machine's global git config.

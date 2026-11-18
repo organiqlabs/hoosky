@@ -116,15 +116,19 @@ are not part of the payload, and the API key is never exposed in `ps` output.
 
 ## Development
 
+The [Makefile](Makefile) is the single source of truth for the install and verification
+commands. Run every local gate with:
+
 ```sh
-bash -n prepare-commit-msg        # syntax check
-bash -n install.sh                # syntax check (installer)
-bash prepare-commit-msg.test.sh   # hook suite; stubs curl, never touches the network
-bash install.test.sh              # installer suite; stubs curl, sandboxes HOME and git config
-bash check-version.sh             # every vX.Y.Z reference matches install.sh's TAG
+make test      # syntax checks, version check, both suites, checksum verification
+make help      # all targets (install, uninstall, checksums, ...)
 ```
 
-Deps: `bash`, `git`, `jq`, `grep` (curl at runtime; plus required standard userland — `tr`/`sed`/`wc`/`tail`/`head`/`dirname`/`cat`/`mktemp`/`mv`/`chmod`/`rm`; unguarded tools degrade silently). The diff-stat cap uses `tail -c` and `dd` (POSIX) plus `od`/`wc`/`tr`, so it works on BSD/macOS without coreutils. No build, no CI, no manifest.
+From a checkout, `make install` runs the installer (global by default); pass
+`make install ARGS="--dir PATH"` for a narrower scope. The plain `curl … | bash` command
+above remains the way to install without a checkout.
+
+Deps: `bash`, `git`, `jq`, `grep`, `make` (curl at runtime; plus required standard userland — `tr`/`sed`/`wc`/`tail`/`head`/`dirname`/`cat`/`mktemp`/`mv`/`chmod`/`rm`; unguarded tools degrade silently). The diff-stat cap uses `tail -c` and `dd` (POSIX) plus `od`/`wc`/`tr`, so it works on BSD/macOS without coreutils. No build, no CI, no manifest beyond the Makefile.
 
 Release procedure (bumping the tag, checksums, and docs): [RELEASING.md](RELEASING.md). `TAG` in `install.sh` is the single source of truth for the version.
 Repo conventions for agents: [AGENTS.md](AGENTS.md).

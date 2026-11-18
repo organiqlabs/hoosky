@@ -58,14 +58,19 @@ git_q() {
   local d="$1"; shift
   env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$d/gitconfig" HOME="$d/home" git "$@"
 }
-config_get() { env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$1/gitconfig" git config --global core.hooksPath 2>/dev/null; }
+config_get()  { env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$1/gitconfig" git config --global core.hooksPath 2>/dev/null; }
+managed_get() { env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$1/gitconfig" git config --global hoosky.hooksPathManaged 2>/dev/null; }
 
 # 1. Default, hooksPath unset: creates ~/.config/git/hooks, sets config, installs
 d="$(mk_env t1)"; out="$(run "$d" 2>"$d/err")"; rc=$?
 if [ $rc -eq 0 ] && [ -x "$d/home/.config/git/hooks/prepare-commit-msg" ] \
-   && [ "$(config_get "$d")" = "$d/home/.config/git/hooks" ] && grep -q 'set global core.hooksPath' "$d/err"; then
-  ok "default: global hooks dir created, config set, hook installed"
-else bad "default: global hooks dir created, config set, hook installed (rc=$rc)"; fi
+   && [ "$(config_get "$d")" = "$d/home/.config/git/hooks" ] \
+   && [ "$(managed_get "$d")" = "$d/home/.config/git/hooks" ] \
+   && grep -q 'set global core.hooksPath' "$d/err" \
+   && grep -q 'WARNING: global core.hooksPath' "$d/err" \
+   && grep -q 'pre-existing repo-local hooks' "$d/err"; then
+  ok "default: global hooks dir created, config+marker set, shadowing warned, hook installed"
+else bad "default: global hooks dir created, config+marker set, shadowing warned, hook installed (rc=$rc)"; fi
 
 # 2. Default, hooksPath pre-set to an absolute path: installed there, config untouched
 d="$(mk_env t2)"; mkdir -p "$d/myhooks"
@@ -136,14 +141,35 @@ if [ "$refusal_ok" = 1 ] && [ "$force_ok" = 1 ]; then
   ok "unmanaged hook: refused without --force; --force backs up and overwrites"
 else bad "unmanaged hook: refused without --force (refusal=$refusal_ok) / --force backup+overwrite (force=$force_ok)"; fi
 
-# 10. Uninstall: default global target; hook moved aside; config deliberately left alone (with hint)
+# 10. Uninstall: hook moved aside; the hooksPath hoosky set is removed so per-repo hooks work again
 d="$(mk_env t10)"
 run "$d" >/dev/null 2>&1
 out="$(run "$d" --uninstall 2>"$d/err")"; rc=$?
 if [ $rc -eq 0 ] && ls "$d/home/.config/git/hooks/" | grep -q '^prepare-commit-msg\.uninstalled\.' \
-   && grep -q 'core.hooksPath still points' "$d/err" && [ -n "$(config_get "$d")" ]; then
-  ok "--uninstall: hook moved aside; global hooksPath left alone with hint"
-else bad "--uninstall: hook moved aside; global hooksPath left alone with hint (rc=$rc)"; fi
+   && grep -q 'removed the global core.hooksPath hoosky set' "$d/err" \
+   && [ -z "$(config_get "$d")" ] && [ -z "$(managed_get "$d")" ]; then
+  ok "--uninstall: hook moved aside; hoosky-owned global hooksPath removed"
+else bad "--uninstall: hook moved aside; hoosky-owned global hooksPath removed (rc=$rc)"; fi
+
+# 10b. Uninstall never removes a hooksPath the user configured before installing
+d="$(mk_env t10b)"; mkdir -p "$d/myhooks"
+git_q "$d" config --global core.hooksPath "$d/myhooks"
+run "$d" >/dev/null 2>&1
+out="$(run "$d" --uninstall 2>"$d/err")"; rc=$?
+if [ $rc -eq 0 ] && [ "$(config_get "$d")" = "$d/myhooks" ] \
+   && ! grep -q 'removed the global core.hooksPath' "$d/err"; then
+  ok "--uninstall: user-owned global hooksPath left untouched"
+else bad "--uninstall: user-owned global hooksPath left untouched (rc=$rc)"; fi
+
+# 10c. Shared hooks dir: keep the path because other hooks still live there
+d="$(mk_env t10c)"
+run "$d" >/dev/null 2>&1
+printf '#!/bin/sh\n' > "$d/home/.config/git/hooks/pre-commit"
+out="$(run "$d" --uninstall 2>"$d/err")"; rc=$?
+if [ $rc -eq 0 ] && [ "$(config_get "$d")" = "$d/home/.config/git/hooks" ] \
+   && grep -q 'other hooks live there' "$d/err"; then
+  ok "--uninstall: shared hooks dir -> path kept with explanation"
+else bad "--uninstall: shared hooks dir -> path kept with explanation (rc=$rc)"; fi
 
 # 11. --global combined with --dir: usage error
 d="$(mk_env t11)"

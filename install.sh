@@ -31,6 +31,8 @@ usage: install.sh [options]
   --force          overwrite an unmanaged hook, or uninstall without the checksum match
   --help           this text
 
+WARNING: a global core.hooksPath makes Git ignore every repo's .git/hooks directory, so
+pre-existing local hooks stop running. Prefer --dir/--all for a narrower install.
 Note: when core.hooksPath is set anywhere (global or local), --dir/--all install into the
 hooks directory git resolves for those repos (possibly a shared global dir), not .git/hooks.
 
@@ -125,24 +127,48 @@ global_hooks_dir() {
   printf '%s\n' "$xdg/git/hooks"
 }
 
-# After a global install: point core.hooksPath at $hd if it isn't set yet,
-# otherwise the hook is installed where git never looks. After a global
-# uninstall: leave the config alone, but say so when it still points at the
-# directory the hook was removed from.
+# After a global install: point core.hooksPath at $hd if it isn't set yet, otherwise the
+# hook is installed where git never looks. Record ownership so uninstall can undo only what
+# we changed — a hooksPath the user set themselves is never removed. Setting the global
+# path shadows every repo-local .git/hooks directory, so say that loudly.
 global_post_action() {  # <hd> <install|uninstall> -> 0 ok, 1 failed
-  local hd="$1" phase="$2" cur
+  local hd="$1" phase="$2" cur managed leftover
   if [ "$phase" = install ]; then
     if git config --global core.hooksPath >/dev/null 2>&1; then
       return 0
     fi
     if git config --global core.hooksPath "$hd"; then
+      err "WARNING: global core.hooksPath makes Git ignore every repository's .git/hooks directory."
+      err "WARNING: pre-existing repo-local hooks will stop running; use --dir PATH or --all ROOT for a narrower install."
       err "set global core.hooksPath to $hd — hoosky now runs in every git repository"
+      if git config --global hoosky.hooksPathManaged "$hd"; then
+        :
+      else
+        err "note: could not record ownership of core.hooksPath; --uninstall will leave it in place"
+      fi
       return 0
     fi
     err "installed, but could not set global core.hooksPath; run: git config --global core.hooksPath '$hd'"
     return 1
   fi
   cur="$(git config --global core.hooksPath 2>/dev/null || true)"
+  managed="$(git config --global hoosky.hooksPathManaged 2>/dev/null || true)"
+  if [ -n "$managed" ] && [ "$managed" = "$hd" ] && [ -n "$cur" ] \
+    && cur="$(expand_hooks_path "$cur")" && [ "$cur" = "$hd" ]; then
+    # Only unset when nothing else lives in the shared hooks dir; removing the path
+    # there would silently disable any other hooks installed alongside ours.
+    leftover="$(find "$hd" ! -path "$hd" ! -name "$HOOK_NAME*" -print -quit 2>/dev/null)"
+    if [ -z "$leftover" ]; then
+      if git config --global --unset core.hooksPath && git config --global --unset hoosky.hooksPathManaged; then
+        err "removed the global core.hooksPath hoosky set — per-repo .git/hooks are active again"
+        return 0
+      fi
+      err "could not unset global core.hooksPath; restore per-repo hooks with: git config --global --unset core.hooksPath"
+      return 1
+    fi
+    err "note: global core.hooksPath still points at $hd (other hooks live there); restore per-repo hooks with: git config --global --unset core.hooksPath"
+    return 0
+  fi
   if [ -n "$cur" ] && cur="$(expand_hooks_path "$cur")" && [ "$cur" = "$hd" ]; then
     err "note: global core.hooksPath still points at $hd; restore per-repo hooks with: git config --global --unset core.hooksPath"
   fi
@@ -264,7 +290,9 @@ if [ "$UNINSTALL" != 1 ] && [ "$rc" = 0 ]; then
   cat <<'EOF'
 
 Next: export GEMINI_API_KEY=... and run `git commit` — the editor opens with an AI draft.
-Installed globally by default, the hook runs in every git repository; use --dir PATH (per repo) or --all ROOT for narrower scopes, or --uninstall to remove it.
+Installed globally by default, the hook runs in every git repository. NOTE: this shadows
+every repo-local .git/hooks directory; use --dir PATH or --all ROOT to avoid that.
+--uninstall restores per-repo hooks when hoosky set the path and no other hooks share it.
 The hook never blocks a commit; without a key it is inert. SKIP_AI_COMMIT=1 bypasses.
 EOF
 fi

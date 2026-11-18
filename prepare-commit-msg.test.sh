@@ -327,6 +327,22 @@ MIN_CJ="$ROOT/min-cj"; mkdir -p "$MIN_CJ"; ln -s "$STUB_BIN/curl" "$MIN_CJ/curl"
 MIN_CJG="$ROOT/min-cjg"; mkdir -p "$MIN_CJG"; ln -s "$STUB_BIN/curl" "$MIN_CJG/curl"; ln -s "$(command -v jq)" "$MIN_CJG/jq"; ln -s "$(command -v git)" "$MIN_CJG/git"
 MIN_CJGS="$ROOT/min-cjgs"; mkdir -p "$MIN_CJGS"; ln -s "$STUB_BIN/curl" "$MIN_CJGS/curl"; ln -s "$(command -v jq)" "$MIN_CJGS/jq"; ln -s "$(command -v git)" "$MIN_CJGS/git"; ln -s "$(command -v grep)" "$MIN_CJGS/grep"
 MIN_CJGST="$ROOT/min-cjgst"; mkdir -p "$MIN_CJGST"; ln -s "$STUB_BIN/curl" "$MIN_CJGST/curl"; ln -s "$(command -v jq)" "$MIN_CJGST/jq"; ln -s "$(command -v git)" "$MIN_CJGST/git"; ln -s "$(command -v grep)" "$MIN_CJGST/grep"; ln -s "$(command -v sed)" "$MIN_CJGST/sed"
+# Guard order in the hook: curl jq git grep sed tr dirname tail cat. Each fixture below
+# contains exactly the tools before the one under test so only that guard can fire.
+make_min_bin() {  # <dir-name> <tool>...
+  local d="$ROOT/min-$1"; shift; mkdir -p "$d"
+  local f src
+  for f in "$@"; do
+    case "$f" in curl) src="$STUB_BIN/curl" ;; *) src="$(command -v "$f")" ;; esac
+    ln -s "$src" "$d/$f"
+  done
+}
+make_min_bin cjgstr     curl jq git grep sed tr
+make_min_bin cjgstd     curl jq git grep sed tr dirname
+make_min_bin cjgstdat   curl jq git grep sed tr dirname tail
+MIN_CJGSTR="$ROOT/min-cjgstr"
+MIN_CJGSTD="$ROOT/min-cjgstd"
+MIN_CJGSTDAT="$ROOT/min-cjgstdat"
 
 r=$(make_repo missed-curl); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" PATH="$EMPTY_BIN" GEMINI_API_KEY=fake)
@@ -346,6 +362,15 @@ if [ "$rc" = 0 ] && grep -q "'sed' not found" "$ROOT/stderr"; then unchanged "$m
 r=$(make_repo missed-tr); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" PATH="$MIN_CJGST" GEMINI_API_KEY=fake)
 if [ "$rc" = 0 ] && grep -q "'tr' not found" "$ROOT/stderr"; then unchanged "$m" "missing tr warns"; else bad "missing tr warns (rc=$rc)"; fi
+r=$(make_repo missed-dirname); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" PATH="$MIN_CJGSTR" GEMINI_API_KEY=fake)
+if [ "$rc" = 0 ] && grep -q "'dirname' not found" "$ROOT/stderr"; then unchanged "$m" "missing dirname warns"; else bad "missing dirname warns (rc=$rc)"; fi
+r=$(make_repo missed-tail); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" PATH="$MIN_CJGSTD" GEMINI_API_KEY=fake)
+if [ "$rc" = 0 ] && grep -q "'tail' not found" "$ROOT/stderr"; then unchanged "$m" "missing tail warns"; else bad "missing tail warns (rc=$rc)"; fi
+r=$(make_repo missed-cat); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" PATH="$MIN_CJGSTDAT" GEMINI_API_KEY=fake)
+if [ "$rc" = 0 ] && grep -q "'cat' not found" "$ROOT/stderr"; then unchanged "$m" "missing cat warns"; else bad "missing cat warns (rc=$rc)"; fi
 
 # 9. Happy path: draft prepended, comment kept. The hook's condensed prompt no longer
 # carries diff/branch/formatting context, so this pins the observable outcome instead.

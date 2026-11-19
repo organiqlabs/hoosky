@@ -8,6 +8,5 @@ install.test.sh text eol=lf
 checksums.txt text eol=lf
 # Source archives (git archive) need only the runtime files; drop dev/audit files.
 AGENTS.md export-ignore
-ROADMAP.md export-ignore
 prepare-commit-msg.test.sh export-ignore
 install.test.sh export-ignore

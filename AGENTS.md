@@ -1,19 +1,20 @@
 # AGENTS.md
 
 Standalone Gemini-backed commit-message drafting hook. Files: `prepare-commit-msg` (bash),
-`prepare-commit-msg.test.sh` (POSIX-only harness), `README.md`, `ROADMAP.md` (pomona
-backlog — open P1–P3 items are worked down to zero; P4 holds parked decisions,
-don't implement them without asking), `.gitignore`, `.gitattributes`, `LICENSE` (MIT),
-`install.sh` (curl installer for the hook; default target is the global git hooks
-directory — sets `core.hooksPath` to `~/.config/git/hooks` globally after a successful
-global install when unset; `--dir`/`--all` target specific repos; `--global` is the
-explicit form of the default) and `checksums.txt` (published sha256 of the hook and
-itself, read from the tag at install time; regenerate after any edit to `prepare-commit-msg`
-or `install.sh` with `make checksums`). Git repo, branch `main`; no CI or build beyond
-the Makefile. Don't invent toolchain commands. This repo is published as
-`organiqlabs/hoosky` — `install.sh` downloads the release tag defined by `TAG` in
-`install.sh`, not the worktree. See `RELEASING.md` for the release procedure; `TAG` is the
-single source of truth and `make check-version` verifies docs match it.
+`prepare-commit-msg.test.sh` (POSIX-only harness), `README.md`, `.gitignore`,
+`.gitattributes`, `LICENSE` (MIT), `install.sh` (curl installer for the hook; default
+target is the global git hooks directory — sets `core.hooksPath` to
+`~/.config/git/hooks` globally after a successful global install when unset;
+`--dir`/`--all` target specific repos; `--global` is the explicit form of the
+default) and `checksums.txt` (published sha256 of the hook and itself, read from the
+tag at install time; regenerate after any edit to `prepare-commit-msg` or `install.sh`
+with `make checksums`). Local quality findings live in the gitignored
+`specs/pomona/tasks.md` queue driven by `/speckit.pomona.cycle` — local state, not
+shipped. Git repo, branch `main`; no CI or build beyond the Makefile. Don't invent
+toolchain commands. This repo is published as `organiqlabs/hoosky` — `install.sh`
+downloads the release tag defined by `TAG` in `install.sh`, not the worktree. See
+`RELEASING.md` for the release procedure; `TAG` is the single source of truth and
+`make check-version` verifies docs match it.
 
 ## Identity
 

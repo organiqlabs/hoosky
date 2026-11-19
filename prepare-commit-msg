@@ -22,6 +22,8 @@ MODEL="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
 MAX_DIFF_CHARS="${GEMINI_MAX_DIFF_CHARS:-}"
 MAX_INPUT_TOKENS="${GEMINI_MAX_INPUT_TOKENS:-8000}"
 TIMEOUT="${GEMINI_TIMEOUT:-20}"
+# Body wrap width used by the post-processing pipeline below; the prompt asks for 82.
+BODY_WRAP_WIDTH=82
 
 # One representation of the knob fallback policy: a non-numeric, over-long, or zero-style
 # value falls back to $3. Leading zeros are normalized with 10# so "$((10#08))" is decimal,
@@ -112,6 +114,40 @@ wrap_text() {
     done
   done
   if [ -n "$cur" ]; then printf '%s\n' "$cur"; fi
+}
+
+# Drop trailing connector words left by a truncated model response. Apply only to lines
+# that END a thought: the subject and the last non-empty body line. Intermediate wrapped
+# lines are left alone — a body line ending in "to" is usually a wrap point ("... to
+# verify..."), not a dangling fragment. A line is never emptied by this cleanup.
+clean_dangling_line() {  # <line> -> line with trailing connectors removed
+  local line="$1" prev
+  local re
+  # Kept in a variable: a literal ';' inside the [[ =~ ]] pattern would be parsed
+  # by bash as a command separator.
+  re='^(.*[[:space:]])(a|an|the|and|or|but|nor|yet|so|for|with|of|to|in|on|at|by|from|as)[.,;:!?]*[[:space:]]*$'
+  while [[ "$line" =~ $re ]]; do
+    prev="${BASH_REMATCH[1]}"
+    prev="${prev%"${prev##*[![:space:]]}"}"    # trim trailing whitespace
+    [ -n "$prev" ] || break
+    line="$prev"
+  done
+  printf '%s\n' "$line"
+}
+
+clean_dangling_words() {
+  local line
+  local -a lines=()
+  while IFS= read -r line; do lines+=("$line"); done
+  [ ${#lines[@]} -gt 0 ] || return 0
+  lines[0]="$(clean_dangling_line "${lines[0]}")"
+  local i=$((${#lines[@]} - 1))
+  while [ "$i" -ge 0 ] && [ -z "${lines[$i]//[[:space:]]/}" ]; do i=$((i - 1)); done
+  # Only clean the final line when it is a body line, not the subject again.
+  if [ "$i" -gt 0 ]; then
+    lines[$i]="$(clean_dangling_line "${lines[$i]}")"
+  fi
+  printf '%s\n' "${lines[@]}"
 }
 
 # --- Guards
@@ -220,7 +256,7 @@ RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 # the static text must contain NOTHING the shell would expand or substitute:
 # no bare $, no backticks, no \r. If you add static prompt text, keep it shell-clean.
 cat > "$TMP/prompt.txt" <<EOF
-A commit message is permanent technical documentation, make a well formatted **Subject>=60/Body>=82 wrapped line rule** commit. `<subject line>\n<single paragraph of technical reasoning>`.
+A commit message is permanent technical documentation, make a well formatted **meaningful Subject<=60 & Body<=82; wrapped line rule** commit. `<subject line>\n<single paragraph of technical reasoning>`.
 
 Required detail level (${DETAIL}): ${DETAIL_TEXT}
 
@@ -263,11 +299,20 @@ fi
 MSG="$(printf '%s' "$MSG" | tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | sed -E -e '/^[[:space:]]*[`~]{3,}([A-Za-z0-9_.+#-]+)?[[:space:]]*$/d' -e '/[^[:space:]]/,$!d')"
 [ -n "$MSG" ] || { warn "response contained only formatting noise; skipping"; exit 0; }
 
-# --- Normalize the final format: subject limit + body wrap (configurable)
+# --- Post-processing pipeline: clean the tail, split, re-wrap the body, reassemble.
+# This used to be dead code (SUBJ/REM/BODY were computed but never written back); the
+# wrap_text helper above was likewise unused. Both are now the single output path.
+MSG="$(printf '%s\n' "$MSG" | clean_dangling_words)"
 SUBJ="${MSG%%$'\n'*}"
 REM="${MSG#"$SUBJ"}"
 BODY="${REM#$'\n'}"
 BODY="$(printf '%s' "$BODY" | sed -e '/[^[:space:]]/,$!d')"   # collapse leading blank lines
+if [ -n "$BODY" ]; then
+  WRAPPED="$(printf '%s\n' "$BODY" | wrap_text "$BODY_WRAP_WIDTH")"
+  MSG="$SUBJ"$'\n\n'"$WRAPPED"
+else
+  MSG="$SUBJ"
+fi
 
 # --- Prepend draft; atomic-ish write into the same directory as the msg file
 # mktemp template in the msg dir (same filesystem for mv; unpredictable name, no clobber)

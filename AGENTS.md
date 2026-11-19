@@ -82,10 +82,12 @@ single source of truth and `make check-version` verifies docs match it.
   so user config/textconv drivers can't alter or leak the payload; `--stat` is capped at
   4000 bytes (byte-accurate `wc -c` precheck; a possibly partial first tail line is dropped on cut;
   a single >4000-byte stat line with no newline is kept as the raw 4000-byte slice).
-- Output: Conventional Commits is requested in the prompt, but the hook does **not** enforce a
-  subject limit or re-wrap the body after the API response — the response text is written through
-  verbatim after control-char/fence stripping. Strips code fences; prepends the draft above git's existing
-  comment block (written via same-dir temp file + `mv`).
+- Output: Conventional Commits is requested in the prompt; there is no configurable subject or
+  body knob. After fence/control-char stripping, the response goes through one post-processing
+  pipeline: `clean_dangling_words` drops trailing connector words from the last non-empty line,
+  then `wrap_text` re-wraps the body to a fixed 82 columns (`BODY_WRAP_WIDTH`), reassembling it
+  under the untouched subject. Prepends the draft above git's existing comment block (written
+  via same-dir temp file + `mv`).
 - `GEMINI_DETAIL_LEVEL` picks the detail tier sent in the prompt: `minimal` (default) | `standard`
   | `detailed` (case-insensitive); anything unrecognized warns and falls back to minimal. It does
   not alter the message text.

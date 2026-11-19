@@ -887,6 +887,48 @@ if [ "$rc" = 0 ] && grep -qx 'aaaaaaaaaa bbbbbbbbb' "$m" && grep -qx 'aaaaaaaaaa
   ok "wrap boundary: body passed through unwrapped"
 else bad "wrap boundary (rc=$rc)"; fi
 
+# 42b. The wrap_text helper is wired into the output pipeline: a long body is re-wrapped
+# to the fixed 82-column width (no env knob), while the subject stays untouched.
+cat > "$ROOT/wire-wrap.json" <<'JSON'
+{"candidates":[{"content":{"parts":[{"text":"feat(x): wrap wired\n\nThe quick brown fox jumps over the lazy dog and keeps running through the open fields while the sun sets slowly behind the distant hills tonight."}]}}]}
+JSON
+r=$(make_repo wirewrap); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/wire-wrap.json")
+max_body=0; body_lines=0
+while IFS= read -r line; do
+  case "$line" in \#*|'') continue ;; esac
+  [ "${#line}" -gt "$max_body" ] && max_body="${#line}"
+  body_lines=$((body_lines+1))
+done < <(tail -n +2 "$m")
+if [ "$rc" = 0 ] && [ "$(head -1 "$m")" = 'feat(x): wrap wired' ] \
+  && [ "$body_lines" -ge 2 ] && [ "$max_body" -le 82 ] && [ "$max_body" -gt 20 ]; then
+  ok "wrap_text wired: long body wrapped to 82 columns"
+else bad "wrap_text wired (rc=$rc, body_lines=$body_lines, max=$max_body)"; fi
+
+# 42c. Trailing dangling connector words from a truncated response are dropped, and the
+# rest of the body (and the subject) is preserved.
+cat > "$ROOT/wire-dangle.json" <<'JSON'
+{"candidates":[{"content":{"parts":[{"text":"feat(x): trailing cleanup\n\nThis is the whole body and the"}]}}]}
+JSON
+r=$(make_repo wiredangle); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/wire-dangle.json")
+if [ "$rc" = 0 ] && [ "$(head -1 "$m")" = 'feat(x): trailing cleanup' ] \
+  && grep -q 'This is the whole body' "$m" && ! grep -q 'and the' "$m"; then
+  ok "dangling trailing words stripped from the last body line"
+else bad "dangling trailing words stripped (rc=$rc)"; fi
+
+# 42d. A dangling connector on the SUBJECT is cleaned too, while connectors in the
+# middle of the body (including wrap points) are preserved.
+cat > "$ROOT/wire-subject.json" <<'JSON'
+{"candidates":[{"content":{"parts":[{"text":"test(scripts): add vocabulary guard to\n\nAdd unsupportedPatternReason and tests to verify every pattern uses only supported constructs."}]}}]}
+JSON
+r=$(make_repo wiresubject); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/wire-subject.json")
+if [ "$rc" = 0 ] && [ "$(head -1 "$m")" = 'test(scripts): add vocabulary guard' ] \
+  && grep -q 'tests to verify every pattern' "$m"; then
+  ok "dangling subject connector stripped; body connectors preserved"
+else bad "dangling subject connector stripped (rc=$rc, subj='$(head -1 "$m")')"; fi
+
 # 43. SKIP_AI_COMMIT=1 bypasses even with git unusable (before any git/curl call)
 r=$(make_repo skipgit); m=$(fresh_msg "$r")
 ( cd "$r" && env -i SKIP_AI_COMMIT=1 PATH="$LOGGIT:$DENY_BIN:/usr/bin:/bin" HOME="$HOME_DIR" GEMINI_API_KEY=fake GIT_CONFIG_NOSYSTEM=1 GIT_LOG="$r/git2.log" "$BASH_BIN" "$HOOK" "$m" "" >/dev/null 2>"$ROOT/skip.err" )

@@ -72,6 +72,10 @@ fifo message file, an unparseable or oversized API response, an unwritable messa
 a backend tool failure (mktemp/jq/mv), an unsafe or unset key — the hook prints a one-line
 reason to stderr and exits 0 without modifying your message. On `SKIP_AI_COMMIT=1`, `-m`/merge/squash/amend, a message file that already has content, or an empty staged diff it exits 0 silently. Either way, the commit behaves exactly as if the hook weren't installed.
 
+The draft is post-processed once: trailing dangling connector words (e.g. a response ending in
+"and the") are dropped, and the body is re-wrapped to 82 columns while the subject line is left
+as the model wrote it.
+
 | Variable                  | Default                 | Meaning                                             |
 | ------------------------- | ----------------------- | --------------------------------------------------- |
 | `GEMINI_API_KEY`          | —                       | Required. Sent to curl via stdin config, never argv |

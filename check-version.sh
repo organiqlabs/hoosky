@@ -11,10 +11,12 @@ if [ -z "$tag" ]; then
   exit 1
 fi
 
-# Scan the tree (tracked or not) for literal vX.Y.Z tokens, so the check also works
-# while a release is being staged. This script contains only the regex, never a
-# literal version, so it cannot flag itself.
-versions="$(find . -type f -not -path './.git/*' -print0 | xargs -0 grep -IhoE 'v[0-9]+\.[0-9]+\.[0-9]+' 2>/dev/null | sort -u)"
+# Scan tracked files for literal vX.Y.Z tokens, so the check also works while a
+# release is being staged. Restricting to tracked files keeps .gitignored local
+# state (.specify/, specs/pomona/) and untracked scratch files from failing the
+# gate; a doc only matters once it is added. This script contains only the regex,
+# never a literal version, so it cannot flag itself.
+versions="$(git grep -IhoE 'v[0-9]+\.[0-9]+\.[0-9]+' 2>/dev/null | sort -u)"
 
 if [ -z "$versions" ] || [ "$versions" = "$tag" ]; then
   printf 'check-version: all release references match TAG=%s\n' "$tag"

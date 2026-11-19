@@ -78,8 +78,7 @@ downloads the release tag defined by `TAG` in `install.sh`, not the worktree. Se
   Env-var fallback rules (all zero-style values such as `00` count as zero, which
   also falls back): `GEMINI_MAX_INPUT_TOKENS` non-numeric, ≤0, or >9 digits → 8000;
   `GEMINI_MAX_DIFF_CHARS` non-numeric, ≤0, or >15 digits → the token-derived cap;
-  `GEMINI_TIMEOUT` non-numeric, ≤0, or >2 digits → 20; subject/body knobs below need
-  ≤0, non-numeric, or >3 digits to fall back. `git diff` runs with `--no-ext-diff --no-textconv`
+  `GEMINI_TIMEOUT` non-numeric, ≤0, or >2 digits → 20. `git diff` runs with `--no-ext-diff --no-textconv`
   so user config/textconv drivers can't alter or leak the payload; `--stat` is capped at
   4000 bytes (byte-accurate `wc -c` precheck; a possibly partial first tail line is dropped on cut;
   a single >4000-byte stat line with no newline is kept as the raw 4000-byte slice).

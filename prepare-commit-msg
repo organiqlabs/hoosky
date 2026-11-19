@@ -256,7 +256,7 @@ RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 # the static text must contain NOTHING the shell would expand or substitute:
 # no bare $, no backticks, no \r. If you add static prompt text, keep it shell-clean.
 cat > "$TMP/prompt.txt" <<EOF
-A commit message is permanent technical documentation, make a well formatted **meaningful Subject<=60 & Body<=82; wrapped line rule** commit. `<subject line>\n<single paragraph of technical reasoning>`.
+A commit message is permanent technical documentation, make a well formatted **meaningful Subject<=60 & Body<=82; wrapped line rule** commit: <subject line>\n<single paragraph of technical reasoning>.
 
 Required detail level (${DETAIL}): ${DETAIL_TEXT}
 

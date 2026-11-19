@@ -372,8 +372,7 @@ r=$(make_repo missed-cat); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" PATH="$MIN_CJGSTDAT" GEMINI_API_KEY=fake)
 if [ "$rc" = 0 ] && grep -q "'cat' not found" "$ROOT/stderr"; then unchanged "$m" "missing cat warns"; else bad "missing cat warns (rc=$rc)"; fi
 
-# 9. Happy path: draft prepended, comment kept. The hook's condensed prompt no longer
-# carries diff/branch/formatting context, so this pins the observable outcome instead.
+# 9. Happy path: draft prepended, comment kept. Test 9e pins the request payload itself.
 r=$(make_repo happy); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
 if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts): add a thing' && grep -q '^# Please enter' "$m" \
@@ -409,8 +408,8 @@ else
 fi
 
 # 9d. Detached HEAD: `git branch --show-current` succeeds with EMPTY output. The hook
-# still falls back to a short SHA internally; with the condensed prompt nothing is
-# rendered, so this pins that a detached checkout does not block the draft.
+# still falls back to a short SHA internally, so this pins that a detached checkout
+# does not block the draft.
 r=$(make_detached_repo detach); m=$(fresh_msg "$r")
 if [ -n "$(git -C "$r" branch --show-current)" ]; then
   bad "detached HEAD fixture is detached (precondition)"
@@ -423,6 +422,21 @@ else
   else
     bad "detached HEAD: draft prepended (rc=$rc)"
   fi
+fi
+
+# 9e. Request payload: the unquoted heredoc must carry the static prompt and the staged
+# diff. Literal backticks in it used to abort as command substitution and send
+# {"text":""} with a bash syntax error, which the outcome-only tests above cannot see.
+r=$(make_repo payload); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/body.json")
+body="$(jq -r '.contents[0].parts[0].text // empty' "$r/body.json" 2>/dev/null)"
+if [ "$rc" = 0 ] && [ -n "$body" ] \
+  && printf '%s\n' "$body" | grep -qx '+change' \
+  && printf '%s\n' "$body" | grep -qx 'Diff stat:' \
+  && ! grep -qE 'command substitution|syntax error' "$ROOT/stderr"; then
+  ok "request body carries prompt and staged diff"
+else
+  bad "request body carries prompt and staged diff (rc=$rc, bytes=${#body})"
 fi
 
 # 10. API error payload: warn (with API message), exit 0, file untouched
@@ -1072,20 +1086,18 @@ rc_int=$( cd "$r" && set -m && {
 if ! grep -qE '^feat' "$m" && grep -q '^# Please enter' "$m"; then untouched_i=1; else untouched_i=0; fi
 if [ "$rc_int" = 130 ] && [ "$untouched_i" = 1 ]; then ok "INT in flight: exit 130, message unchanged"; else bad "INT in flight: exit 130 (rc=$rc_int)"; fi
 
-# Heredoc shell-safety: the unquoted prompt heredoc must contain no CR and no bare $
-# (every $ must be an intended ${...} expansion).
-# NOTE: the condensed prompt currently contains literal backticks. In an unquoted heredoc
-# those trigger a bash command-substitution syntax error and send an empty prompt. That is
-# a hook-side issue; this test-file-only update deliberately leaves the hook untouched, so
-# the backtick guard is not asserted here.
+# Heredoc shell-safety: the unquoted prompt heredoc must contain no CR, no bare $
+# (every $ must be an intended ${...} expansion), and no backticks (a literal one
+# aborts as command substitution and sends an empty prompt).
 heredoc="$(awk '/^cat > "\$TMP\/prompt.txt" <<EOF$/{f=1;next} /^EOF$/{f=0} f' "$HOOK")"
 hs_ok=1
 if printf '%s' "$heredoc" | grep -q $'\r'; then hs_ok=0; fi
+if printf '%s' "$heredoc" | grep -q '`'; then hs_ok=0; fi
 dollars="$(printf '%s' "$heredoc" | grep -o '\$' | wc -l)"
 braces="$(printf '%s' "$heredoc" | grep -o '\${' | wc -l)"
 [ "$dollars" -eq "$braces" ] || hs_ok=0
 [ -n "$heredoc" ] || hs_ok=0
-if [ "$hs_ok" = 1 ]; then ok "prompt heredoc has no CR or bare \$"; else bad "prompt heredoc has no CR or bare \$"; fi
+if [ "$hs_ok" = 1 ]; then ok "prompt heredoc has no CR, bare \$, or backtick"; else bad "prompt heredoc has no CR, bare \$, or backtick"; fi
 
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"

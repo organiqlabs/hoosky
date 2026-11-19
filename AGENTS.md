@@ -100,8 +100,11 @@ downloads the release tag defined by `TAG` in `install.sh`, not the worktree. Se
 - Deps: `bash`, `git`, `jq`, `grep`, `make` (curl at runtime; plus required standard userland:
   `tr`, `sed`, `wc`, `tail`, `head`, `dirname`, `cat`, `mktemp`, `mv`, `chmod`, `rm` — the
   unguarded ones degrade silently without blocking the commit).
-- `make test` runs `bash -n` on the hook, installer and checker, `check-version.sh`, both
-  suites, and a checksum recompute/diff. The hook suite prints `all tests passed (N tests)`
+- `make test` runs `bash -n` on the hook, installer and checker scripts, `check-version.sh`
+  and its own suite, the hook and installer suites, and a checksum recompute/diff.
+  `check-version.test.sh` builds scratch git repos (no network) and asserts the checker
+  fails rather than passing vacuously when it cannot scan (`git grep` outside a work tree).
+  The hook suite prints `all tests passed (N tests)`
   and exits 0 (or `FAILURES (N tests)` and exits 1). Deps: git/jq + POSIX tools (seq, awk,
   sed, wc, tr, sort, ln, chmod, mktemp, cmp, sha1sum (or `shasum -a 1`), mkfifo, id, env, cp,
   dirname, cat, head, tail); the `awk`/`cmp`/`sha1sum` are not coreutils. It stubs `curl` in

@@ -253,9 +253,9 @@ RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 # no bare $, no backticks, no \r. If you add static prompt text, keep it shell-clean.
 cat > "$TMP/prompt.txt" <<EOF
 A commit message is permanent technical documentation. Make a well formatted commit with a
-**meaningful Subject<=60 & Body<=${BODY_WRAP_WIDTH}; wrapped line rule**: a subject line
-(aim for 60 characters, but keep the thought complete; never drop words just to fit),
-then a blank line, then a single paragraph of technical reasoning.
+**meaningful Subject & Body<=${BODY_WRAP_WIDTH}; wrapped line rule**: a subject line that
+states the complete change as one thought (concise, but never clipped to hit a length
+target), then a blank line, then a single paragraph of technical reasoning.
 
 Required detail level (${DETAIL}): ${DETAIL_TEXT}
 

@@ -227,7 +227,15 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
 
   if [ "$UNINSTALL" = 1 ]; then
     if [ ! -e "$dest" ]; then
-      printf '%s\n' "$label: no hook installed; nothing to do"
+      if [ "$kind" = global ] \
+        && [ "$(git config --global hoosky.hooksPathManaged 2>/dev/null || true)" = "$hd" ]; then
+        # The hook file is gone but the global state hoosky set still shadows every
+        # repo-local hooks dir; run the same cleanup as a normal uninstall.
+        global_post_action "$hd" uninstall
+        printf '%s\n' "$label: no hook file at $dest; removing the global hooksPath hoosky set"
+      else
+        printf '%s\n' "$label: no hook installed; nothing to do"
+      fi
       return 0
     fi
     if [ -z "$HOOK_SUM" ]; then

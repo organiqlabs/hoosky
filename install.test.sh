@@ -183,6 +183,17 @@ if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q 'nothing to do' && [ -z "$(conf
   ok "--uninstall, nothing installed: exit 0, config not set"
 else bad "--uninstall, nothing installed: exit 0, config not set (rc=$rc)"; fi
 
+# 12b. --uninstall after the hook file was deleted by hand: the global state hoosky
+# set must still be undone (a missing file must not strand core.hooksPath).
+d="$(mk_env t12b)"
+run "$d" >/dev/null 2>&1
+rm -f "$d/home/.config/git/hooks/prepare-commit-msg"
+out="$(run "$d" --uninstall 2>"$d/err")"; rc=$?
+if [ $rc -eq 0 ] && [ -z "$(config_get "$d")" ] \
+   && grep -q 'removed the global core.hooksPath' "$d/err"; then
+  ok "--uninstall, hook file gone: global hooksPath still cleaned up"
+else bad "--uninstall, hook file gone: global hooksPath still cleaned up (rc=$rc)"; fi
+
 # 13. Relative XDG_CONFIG_HOME is ignored (falls back to ~/.config), with a warning
 d="$(mk_env t13)"
 out="$(env HOME="$d/home" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$d/gitconfig" XDG_CONFIG_HOME=rel/path \

@@ -141,6 +141,18 @@ if [ "$refusal_ok" = 1 ] && [ "$force_ok" = 1 ]; then
   ok "unmanaged hook: refused without --force; --force backs up and overwrites"
 else bad "unmanaged hook: refused without --force (refusal=$refusal_ok) / --force backup+overwrite (force=$force_ok)"; fi
 
+# 9b. Older hoosky hook (checksum differs, hoosky signature intact): upgraded in place
+# with a backup, without demanding --force
+d="$(mk_env t9b)"; mkdir -p "$d/home/.config/git/hooks"
+sed 's/gemini-3\.5-flash-lite/gemini-2.0-flash-lite/' "$REPO/prepare-commit-msg" \
+  > "$d/home/.config/git/hooks/prepare-commit-msg"; chmod +x "$d/home/.config/git/hooks/prepare-commit-msg"
+out="$(run "$d" 2>"$d/err")"; rc=$?
+if [ $rc -eq 0 ] && cmp -s "$REPO/prepare-commit-msg" "$d/home/.config/git/hooks/prepare-commit-msg" \
+   && ls "$d/home/.config/git/hooks/" | grep -q '^prepare-commit-msg\.bak\.' \
+   && printf '%s' "$out" | grep -q 'upgrading'; then
+  ok "older hoosky hook: upgraded in place with backup, no --force needed"
+else bad "older hoosky hook: upgraded in place with backup, no --force needed (rc=$rc)"; fi
+
 # 10. Uninstall: hook moved aside; the hooksPath hoosky set is removed so per-repo hooks work again
 d="$(mk_env t10)"
 run "$d" >/dev/null 2>&1

@@ -185,6 +185,12 @@ repo_hooks_dir() {  # <repo> -> absolute hooks dir
   case "$hd" in /*) printf '%s\n' "$hd" ;; *) printf '%s\n' "$1/$hd" ;; esac
 }
 
+looks_like_hoosky_hook() {  # <file> -> 0 when the file carries hoosky's signature
+  # The GEMINI_API_KEY contract is stable across hoosky releases and foreign hooks
+  # are unlikely to reference it; the checksum stays the authority for uninstall.
+  grep -q 'GEMINI_API_KEY' "$1" 2>/dev/null
+}
+
 file_sum() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{ print $1 }'
@@ -257,11 +263,14 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
   if [ -e "$dest" ]; then
     if [ "$(file_sum "$dest")" = "$HOOK_SUM" ] && [ "$FORCE" != 1 ]; then
       printf '%s\n' "$label: already at $TAG; refreshing anyway"
+    elif looks_like_hoosky_hook "$dest"; then
+      cp -a "$dest" "$dest.bak.$before_ts" || { err "$label: backup of $dest failed; refusing to overwrite"; return 1; }
+      printf '%s\n' "$label: existing hoosky hook backed up to $HOOK_NAME.bak.$before_ts; upgrading to $TAG"
     elif [ "$FORCE" = 1 ]; then
       cp -a "$dest" "$dest.bak.$before_ts" || { err "$label: backup of $dest failed; refusing to overwrite"; return 1; }
       printf '%s\n' "$label: existing hook backed up to $HOOK_NAME.bak.$before_ts"
     else
-      err "$label: $HOOK_NAME exists and is not hoosky; refusing to overwrite without --force (--force backs up first)"
+      err "$label: $HOOK_NAME checksum differs from the published $TAG hook; refusing to overwrite without --force (--force backs up first)"
       return 1
     fi
   fi

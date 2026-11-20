@@ -433,7 +433,8 @@ body="$(jq -r '.contents[0].parts[0].text // empty' "$r/body.json" 2>/dev/null)"
 if [ "$rc" = 0 ] && [ -n "$body" ] \
   && printf '%s\n' "$body" | grep -qx '+change' \
   && printf '%s\n' "$body" | grep -qx 'Diff stat:' \
-  && ! printf '%s\n' "$body" | grep -q 'Subject<=' \
+  && printf '%s\n' "$body" | grep -q 'Subject~60 line' \
+  && printf '%s\n' "$body" | grep -q 'Body~82' \
   && ! grep -qE 'command substitution|syntax error' "$ROOT/stderr"; then
   ok "request body carries prompt and staged diff"
 else

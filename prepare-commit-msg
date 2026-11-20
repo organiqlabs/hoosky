@@ -24,6 +24,10 @@ MAX_INPUT_TOKENS="${GEMINI_MAX_INPUT_TOKENS:-8000}"
 TIMEOUT="${GEMINI_TIMEOUT:-20}"
 # Body wrap width used by the post-processing pipeline below; the prompt asks for 82.
 BODY_WRAP_WIDTH=82
+# Soft target for the subject line in the prompt. Not a hard cap: the prompt must
+# keep the completeness caveat, because models treat a bare numeric limit as hard
+# and clip the thought to comply (observed regression; see the prompt wording).
+SUBJECT_WRAP_WIDTH=60
 
 # One representation of the knob fallback policy: a non-numeric, over-long, or zero-style
 # value falls back to $3. Leading zeros are normalized with 10# so "$((10#08))" is decimal,
@@ -253,9 +257,7 @@ RECENT="$(git log -5 --pretty=format:'%s' 2>/dev/null || true)"
 # no bare $, no backticks, no \r. If you add static prompt text, keep it shell-clean.
 cat > "$TMP/prompt.txt" <<EOF
 A commit message is permanent technical documentation. Make a well formatted commit with a
-**meaningful Subject & Body<=${BODY_WRAP_WIDTH}; wrapped line rule**: a subject line that
-states the complete change as one thought (concise, but never clipped to hit a length
-target), then a blank line, then a single paragraph of technical reasoning.
+**wrapped, meaningful Subject~${SUBJECT_WRAP_WIDTH} line & Body~${BODY_WRAP_WIDTH} as single paragraph of technical reasoning**
 
 Required detail level (${DETAIL}): ${DETAIL_TEXT}
 

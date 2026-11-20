@@ -2,6 +2,9 @@
 # check-version.sh cases. No network: each case builds a scratch dir, copies the
 # checker and installer into it, and runs the checker there. Prints
 # "all tests passed (N tests)" and exits 0, or "FAILURES (N tests)" and exits 1.
+# Fixture versions are assembled at runtime by ver(): this suite is a tracked
+# file, so a literal vX.Y.Z here would make `make check-version` fail at the
+# repo root (the checker scans every tracked file, this suite included).
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -36,32 +39,47 @@ run() {  # -> sets OUTPUT, ERR, RC
   ERR="$(cat "$CASE/.err")"
 }
 
+ver() {  # <major> <minor> <patch> -> vM.m.p without a literal version in this file
+  printf 'v%s.%s.%s' "$1" "$2" "$3"
+}
+
 WORK="$(mktemp -d)" || { printf 'check-version.test: mktemp failed\n' >&2; exit 1; }
+
+# 0. The suite must not carry a literal version token of its own: the checker
+# scans every tracked file, so one here turns `make check-version` red for a
+# reason that has nothing to do with the release docs.
+TOTAL=$((TOTAL + 1))
+if grep -qE 'v[0-9]+\.[0-9]+\.[0-9]+' "$0"; then
+  fail "0: suite contains a literal version token; build fixtures with ver() instead"
+fi
 
 # 1. Matching tree passes and says so.
 TOTAL=$((TOTAL + 1))
+V_MATCH="$(ver 9 9 9)"
 newcase matching
-printf 'See v9.9.9 docs.\n' > "$CASE/notes.md"
-sed 's/^TAG="v[0-9.]*"$/TAG="v9.9.9"/' "$CASE/install.sh" > "$CASE/.tag" && mv "$CASE/.tag" "$CASE/install.sh"
+printf 'See %s docs.\n' "$V_MATCH" > "$CASE/notes.md"
+sed "s/^TAG=\"v[0-9.]*\"\$/TAG=\"$V_MATCH\"/" "$CASE/install.sh" > "$CASE/.tag" && mv "$CASE/.tag" "$CASE/install.sh"
 gitcase || fail "1: git setup"
 run
 [ "$RC" -eq 0 ] || fail "1: expected rc 0, got $RC ($ERR)"
-case "$OUTPUT" in *'match TAG=v9.9.9'*) : ;; *) fail "1: missing success line: $OUTPUT" ;; esac
+case "$OUTPUT" in *"match TAG=$V_MATCH"*) : ;; *) fail "1: missing success line: $OUTPUT" ;; esac
 
 # 2. A second reference fails with the mismatching version named.
 TOTAL=$((TOTAL + 1))
+V_BAD="$(ver 1 2 3)"
 newcase mismatch
-printf 'See v1.2.3 docs.\n' > "$CASE/notes.md"
+printf 'See %s docs.\n' "$V_BAD" > "$CASE/notes.md"
 gitcase || fail "2: git setup"
 run
 [ "$RC" -eq 1 ] || fail "2: expected rc 1, got $RC"
-case "$ERR" in *v1.2.3*) : ;; *) fail "2: stderr did not name v1.2.3: $ERR" ;; esac
+case "$ERR" in *"$V_BAD"*) : ;; *) fail "2: stderr did not name $V_BAD: $ERR" ;; esac
 
 # 3. Gitignored files never reach the gate (tracked-only scan, T013).
 TOTAL=$((TOTAL + 1))
+V_IGN="$(ver 8 8 8)"
 newcase ignored
 printf 'notes.md\n' > "$CASE/.gitignore"
-printf 'scratch v8.8.8\n' > "$CASE/notes.md"
+printf 'scratch %s\n' "$V_IGN" > "$CASE/notes.md"
 gitcase || fail "3: git setup"
 run
 [ "$RC" -eq 0 ] || fail "3: ignored file failed the gate: rc=$RC ($ERR)"

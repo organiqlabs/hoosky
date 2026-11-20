@@ -377,7 +377,7 @@ r=$(make_repo happy); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
 if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts): add a thing' && grep -q '^# Please enter' "$m" \
   && [ -s "$r/prompt.json" ] \
-  && ! grep -q 'ai-commit:' "$ROOT/stderr" \
+  && ! grep -q 'hoosky:' "$ROOT/stderr" \
   && ! compgen -G "$r/COMMIT_EDITMSG.ai-commit.*" >/dev/null; then
   ok "happy path draft prepended"; else bad "happy path draft prepended (rc=$rc)"; fi
 # 9b. Verbose comment block survives byte-for-byte below the draft
@@ -400,7 +400,7 @@ else
   if [ "$rc" = 0 ] && [ -s "$r/prompt.json" ] \
     && head -1 "$m" | grep -q '^feat(scripts)' \
     && ! grep -qiE 'fatal|does not have any commits|unknown revision' "$ROOT/stderr" \
-    && ! grep -q 'ai-commit:' "$ROOT/stderr"; then
+    && ! grep -q 'hoosky:' "$ROOT/stderr"; then
     ok "root commit (unborn HEAD): draft prepended, no git diagnostics"
   else
     bad "root commit (unborn HEAD): draft prepended (rc=$rc)"
@@ -417,7 +417,7 @@ else
   rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
   if [ "$rc" = 0 ] && [ -s "$r/prompt.json" ] \
     && head -1 "$m" | grep -q '^feat(scripts)' \
-    && ! grep -q 'ai-commit:' "$ROOT/stderr"; then
+    && ! grep -q 'hoosky:' "$ROOT/stderr"; then
     ok "detached HEAD: draft prepended"
   else
     bad "detached HEAD: draft prepended (rc=$rc)"
@@ -700,8 +700,8 @@ grep -qF 'models/gemini-3.5-flash-lite:generateContent' "$d/argv-default.txt" ||
 grep -qF 'models/my-test-model-1:generateContent'     "$d/argv-override.txt" || mc=1
 grep -qF 'models/gemini-3.5-flash-lite:generateContent' "$d/argv-bad.txt"    || mc=1
 grep -q 'not a valid model id' "$d/err-bad.txt"                                || mc=1
-! grep -q 'ai-commit:' "$d/err-default.txt"                                    || mc=1
-! grep -q 'ai-commit:' "$d/err-override.txt"                                   || mc=1
+! grep -q 'hoosky:' "$d/err-default.txt"                                    || mc=1
+! grep -q 'hoosky:' "$d/err-override.txt"                                   || mc=1
 [ "$rc_d" = 0 ] && [ "$rc_o" = 0 ] && [ "$rc_b" = 0 ]                             || mc=1
 if [ "$mc" = 0 ]; then ok "gemini model default/override/invalid-id fallback"; else bad "gemini model default/override/invalid-id fallback"; fi
 
@@ -744,10 +744,10 @@ dc=0
 [ "$rc_d" = 0 ] && [ "$rc_s" = 0 ] && [ "$rc_dt" = 0 ] && [ "$rc_b" = 0 ]        || dc=1
 [ "$rc_l" = 0 ] && [ "${#sl}" -gt 60 ] && [ "$mb" -gt 0 ]                         || dc=1
 grep -q 'not one of minimal' "$d/err-bogus.txt"                                  || dc=1
-! grep -q 'ai-commit:' "$d/err-default.txt"                                      || dc=1
-! grep -q 'ai-commit:' "$d/err-standard.txt"                                     || dc=1
-! grep -q 'ai-commit:' "$d/err-detailed.txt"                                     || dc=1
-grep -q 'ai-commit: GEMINI_DETAIL_LEVEL' "$d/err-bogus.txt"                       || dc=1
+! grep -q 'hoosky:' "$d/err-default.txt"                                      || dc=1
+! grep -q 'hoosky:' "$d/err-standard.txt"                                     || dc=1
+! grep -q 'hoosky:' "$d/err-detailed.txt"                                     || dc=1
+grep -q 'hoosky: GEMINI_DETAIL_LEVEL' "$d/err-bogus.txt"                       || dc=1
 if [ "$dc" = 0 ]; then ok "GEMINI_DETAIL_LEVEL normalizes the tier without blocking the draft"; else bad "GEMINI_DETAIL_LEVEL tier selection (dc=$dc)"; fi
 
 # 32. Opening fence with a language tag is stripped too (incl. c++/c#/f# tags)

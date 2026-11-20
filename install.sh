@@ -253,7 +253,7 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
       cp -a "$dest" "$dest.bak.$before_ts" || { err "$label: backup of $dest failed; refusing to overwrite"; return 1; }
       printf '%s\n' "$label: existing hook backed up to $HOOK_NAME.bak.$before_ts"
     else
-      err "$label: $HOOK_NAME exists and is not hoosky; refusing to overwrite without --force (backup will be made)"
+      err "$label: $HOOK_NAME exists and is not hoosky; refusing to overwrite without --force (--force backs up first)"
       return 1
     fi
   fi

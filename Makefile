@@ -27,6 +27,8 @@ help:  ## list targets
 check-syntax:  ## bash -n on all shell scripts
 	bash -n $(HOOK)
 	bash -n $(INSTALLER)
+	bash -n $(HOOK_TEST)
+	bash -n $(INSTALL_TEST)
 	bash -n $(VERSION_CHK)
 	bash -n $(VERSION_TEST)
 

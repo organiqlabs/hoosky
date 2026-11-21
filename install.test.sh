@@ -188,6 +188,15 @@ d="$(mk_env t11)"
 out="$(run "$d" --global --dir "$d" 2>"$d/err")"; rc=$?
 if [ $rc -eq 2 ]; then ok "--global with --dir: exits 2"; else bad "--global with --dir: exits 2 (rc=$rc)"; fi
 
+# 11b. A known flag as the --dir/--all value: usage error, not a downstream skip
+d="$(mk_env t11b)"
+out="$(run "$d" --dir --all ~/src 2>"$d/err")"; rc1=$?
+out2="$(run "$d" --all --force 2>"$d/err2")"; rc2=$?
+if [ $rc1 -eq 2 ] && grep -q "looks like a flag" "$d/err" \
+   && [ $rc2 -eq 2 ] && grep -q "looks like a flag" "$d/err2"; then
+  ok "flag as --dir/--all value: exits 2 with an explanation"
+else bad "flag as --dir/--all value: exits 2 with an explanation (rc1=$rc1, rc2=$rc2)"; fi
+
 # 12. --uninstall with nothing installed: exit 0, global config NOT set
 d="$(mk_env t12)"
 out="$(run "$d" --uninstall 2>"$d/err")"; rc=$?

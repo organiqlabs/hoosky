@@ -52,8 +52,12 @@ UNINSTALL=0
 FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dir)       shift; [ $# -gt 0 ] || { err "--dir needs a value"; exit 2; }; DIRS+=("$1") ;;
-    --all)       shift; [ $# -gt 0 ] || { err "--all needs a value"; exit 2; }; ALL_ROOT="$1" ;;
+    --dir)       shift; [ $# -gt 0 ] || { err "--dir needs a value"; exit 2; }
+                 case "$1" in -*) err "--dir: '$1' looks like a flag, not a path"; exit 2 ;; esac
+                 DIRS+=("$1") ;;
+    --all)       shift; [ $# -gt 0 ] || { err "--all needs a value"; exit 2; }
+                 case "$1" in -*) err "--all: '$1' looks like a flag, not a path"; exit 2 ;; esac
+                 ALL_ROOT="$1" ;;
     --global)    GLOBAL=1 ;;
     --uninstall) UNINSTALL=1 ;;
     --force)     FORCE=1 ;;

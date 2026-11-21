@@ -6,7 +6,7 @@ Standalone Gemini-backed commit-message drafting hook. Files: `prepare-commit-ms
 target is the global git hooks directory — sets `core.hooksPath` to
 `~/.config/git/hooks` globally after a successful global install when unset;
 `--dir`/`--all` target specific repos; `--global` is the explicit form of the
-default) and `checksums.txt` (published sha256 of the hook and itself, read from the
+default) and `checksums.txt` (published sha256 of the hook and the installer, read from the
 tag at install time; regenerate after any edit to `prepare-commit-msg` or `install.sh`
 with `make checksums`). Local quality findings live in the gitignored
 `specs/pomona/tasks.md` queue driven by `/speckit.pomona.cycle` — local state, not

@@ -173,7 +173,10 @@ global_post_action() {  # <hd> <install|uninstall> -> 0 ok, 1 failed
     && cur="$(expand_hooks_path "$cur")" && [ "$cur" = "$hd" ]; then
     # Only unset when nothing else lives in the shared hooks dir; removing the path
     # there would silently disable any other hooks installed alongside ours.
-    leftover="$(find "$hd" ! -path "$hd" ! -name "$HOOK_NAME*" -print -quit 2>/dev/null)"
+    # POSIX find has no -quit (a GNU/BSD extension). Cap output with head instead:
+    # on a strict POSIX find the old -quit errored, stderr was swallowed, and the empty
+    # leftover made us unset core.hooksPath — silently disabling other hooks in the dir.
+    leftover="$(find "$hd" ! -path "$hd" ! -name "$HOOK_NAME*" -print 2>/dev/null | head -n 1)"
     if [ -z "$leftover" ]; then
       if git config --global --unset core.hooksPath && git config --global --unset hoosky.hooksPathManaged; then
         err "removed the global core.hooksPath hoosky set — per-repo .git/hooks are active again"

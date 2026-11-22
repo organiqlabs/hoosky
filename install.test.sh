@@ -183,6 +183,27 @@ if [ $rc -eq 0 ] && [ "$(config_get "$d")" = "$d/home/.config/git/hooks" ] \
   ok "--uninstall: shared hooks dir -> path kept with explanation"
 else bad "--uninstall: shared hooks dir -> path kept with explanation (rc=$rc)"; fi
 
+# 10d. Strictly POSIX find (no -quit): uninstall must still detect other hooks in the
+# shared dir and keep core.hooksPath. -quit is a GNU/BSD extension; a POSIX find rejects
+# it and emits nothing, which previously made hoosky think the dir was empty and silently
+# disable every other hook in it.
+d="$(mk_env t10d)"
+run "$d" >/dev/null 2>&1
+cat > "$d/bin/find" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do
+  if [ "$a" = "-quit" ]; then printf 'find: invalid predicate -quit\n' >&2; exit 1; fi
+done
+exec /usr/bin/find "$@"
+STUB
+chmod +x "$d/bin/find"
+printf '#!/bin/sh\n' > "$d/home/.config/git/hooks/pre-commit"
+out="$(run "$d" --uninstall 2>"$d/err")"; rc=$?
+if [ $rc -eq 0 ] && [ "$(config_get "$d")" = "$d/home/.config/git/hooks" ] \
+   && grep -q 'other hooks live there' "$d/err"; then
+  ok "--uninstall: POSIX find (no -quit) preserves other hooks"
+else bad "--uninstall: POSIX find (no -quit) preserves other hooks (rc=$rc)"; fi
+
 # 11. --global combined with --dir: usage error
 d="$(mk_env t11)"
 out="$(run "$d" --global --dir "$d" 2>"$d/err")"; rc=$?

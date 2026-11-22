@@ -752,6 +752,28 @@ grep -q 'not one of minimal' "$d/err-bogus.txt"                                 
 grep -q 'hoosky: GEMINI_DETAIL_LEVEL' "$d/err-bogus.txt"                       || dc=1
 if [ "$dc" = 0 ]; then ok "GEMINI_DETAIL_LEVEL normalizes the tier without blocking the draft"; else bad "GEMINI_DETAIL_LEVEL tier selection (dc=$dc)"; fi
 
+# 31b. T025: the prompt header must not impose an unconditional "single paragraph"
+# constraint that contradicts the standard/detailed detail tiers. Structure is owned
+# solely by the DETAIL_TEXT line, so only minimal mentions "single paragraph"; the
+# standard and detailed prompts must not contain that phrase at all.
+d="$ROOT/paragraph-check"; rm -rf "$d"; mkdir -p "$d"
+for tier in minimal standard detailed; do
+  r=$(make_repo "para-$tier"); m=$(fresh_msg "$r")
+  rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$d/$tier.json" GEMINI_DETAIL_LEVEL="$tier")
+  [ "$rc" = 0 ] || pc=1
+  jq -r '.contents[0].parts[0].text // empty' "$d/$tier.json" > "$d/$tier.txt" 2>/dev/null
+done
+pc=${pc:-0}
+for tier in minimal standard detailed; do
+  grep -q 'follow the required detail level below for structure' "$d/$tier.txt" || pc=1
+done
+grep -q 'single paragraph of technical reasoning' "$d/minimal.txt" || pc=1
+grep -q 'Multi-paragraph technical justification' "$d/standard.txt" || pc=1
+grep -q 'Exhaustive docs' "$d/detailed.txt" || pc=1
+! grep -q 'single paragraph' "$d/standard.txt" || pc=1
+! grep -q 'single paragraph' "$d/detailed.txt" || pc=1
+if [ "$pc" = 0 ]; then ok "prompt header paragraph constraint harmonized across detail tiers"; else bad "prompt header paragraph harmonization (pc=$pc)"; fi
+
 # 32. Opening fence with a language tag is stripped too (incl. c++/c#/f# tags)
 for tag in diff c++ c# f#; do
   printf '{"candidates":[{"content":{"parts":[{"text":"```%s\\nfeat(x): fenced %s subject\\n```\\nbody line"}]}}]}' "$tag" "$tag" > "$ROOT/langfence-$tag.json"

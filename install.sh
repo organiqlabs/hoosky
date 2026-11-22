@@ -268,7 +268,7 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
       return 1
     fi
     if [ "$(file_sum "$dest")" != "$HOOK_SUM" ] && [ "$FORCE" != 1 ]; then
-      err "$label: installed hook is not the hoosky hook (checksum differs); refusing without --force"
+      err "$label: $HOOK_NAME checksum differs from the published $TAG hook; refusing to uninstall without --force (--force moves the hook aside)"
       return 1
     fi
     mv "$dest" "$dest.uninstalled.$before_ts" || { err "$label: could not move $dest aside; hook left in place"; return 1; }

@@ -204,6 +204,18 @@ if [ $rc -eq 0 ] && [ "$(config_get "$d")" = "$d/home/.config/git/hooks" ] \
   ok "--uninstall: POSIX find (no -quit) preserves other hooks"
 else bad "--uninstall: POSIX find (no -quit) preserves other hooks (rc=$rc)"; fi
 
+# 12c. Uninstall checksum mismatch: the refusal must accurately say the installed
+# hook's checksum differs from the published TAG hook, not that it "is not the hoosky
+# hook" — it may be a genuine older hoosky hook whose checksum changed.
+d="$(mk_env t12c)"
+run "$d" >/dev/null 2>&1
+out="$(STUB_BAD_CHECKSUMS=1 run "$d" --uninstall 2>"$d/err")"; rc=$?
+if [ $rc -eq 1 ] \
+   && grep -q 'checksum differs from the published' "$d/err" \
+   && ! grep -q 'not the hoosky hook' "$d/err"; then
+  ok "--uninstall checksum mismatch: accurate published-TAG message"
+else bad "--uninstall checksum mismatch: accurate published-TAG message (rc=$rc, err=$(cat "$d/err"))"; fi
+
 # 11. --global combined with --dir: usage error
 d="$(mk_env t11)"
 out="$(run "$d" --global --dir "$d" 2>"$d/err")"; rc=$?

@@ -305,6 +305,18 @@ if [ $rc -eq 1 ] && grep -q 'HOME is not set' "$d/err" && ! grep -q 'unbound var
   ok "unset HOME: clear error instead of unbound-variable crash"
 else bad "unset HOME: clear error (rc=$rc, err=$(cat "$d/err"))"; fi
 
+# 20. Missing sed is caught by the prerequisite check: discover_repos pipes find
+# through sed for --all, so proceeding without it silently mis-discovers repositories.
+d="$(mk_env t20)"
+mkdir -p "$d/minbin"
+for t in awk sort find sha256sum bash; do ln -s "$(command -v "$t")" "$d/minbin/$t"; done
+ln -s "$(command -v git)" "$d/minbin/git"
+ln -s "$d/bin/curl" "$d/minbin/curl"
+out="$(env HOME="$d/home" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$d/gitconfig" PATH="$d/minbin" "$(command -v bash)" "$REPO/install.sh" 2>"$d/err")"; rc=$?
+if [ $rc -eq 1 ] && grep -q "'sed' not found; install it and retry" "$d/err"; then
+  ok "missing sed: caught by prerequisite check"
+else bad "missing sed: caught by prerequisite check (rc=$rc, err=$(cat "$d/err"))"; fi
+
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"
 exit "$fail"

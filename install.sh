@@ -83,7 +83,7 @@ if [ "$GLOBAL" = 1 ] && { [ ${#DIRS[@]} -gt 0 ] || [ -n "$ALL_ROOT" ]; }; then
   exit 2
 fi
 
-for cmd in curl git awk sort find; do
+for cmd in curl git awk sed sort find; do
   command -v "$cmd" >/dev/null 2>&1 || { err "'$cmd' not found; install it and retry"; exit 1; }
 done
 if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then

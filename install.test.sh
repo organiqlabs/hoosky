@@ -264,6 +264,14 @@ if [ $rc -eq 0 ] && [ -x "$d/src/my repo/.git/hooks/prepare-commit-msg" ]; then
   ok "--dir: path with spaces installed correctly"
 else bad "--dir: path with spaces installed correctly (rc=$rc)"; fi
 
+# 19. HOME unset: the default/global path resolves home-relative dirs, so it must
+# fail with a clear, actionable message — never bash's opaque "unbound variable".
+d="$(mk_env t19)"
+out="$(env -u HOME -u XDG_CONFIG_HOME GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$d/gitconfig" PATH="$d/bin:/usr/bin:/bin" bash "$REPO/install.sh" 2>"$d/err")"; rc=$?
+if [ $rc -eq 1 ] && grep -q 'HOME is not set' "$d/err" && ! grep -q 'unbound variable' "$d/err"; then
+  ok "unset HOME: clear error instead of unbound-variable crash"
+else bad "unset HOME: clear error (rc=$rc, err=$(cat "$d/err"))"; fi
+
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"
 exit "$fail"

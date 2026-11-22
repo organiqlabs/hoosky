@@ -48,6 +48,10 @@ Per-repo instead of global? Swap `$(git config --global core.hooksPath)` for
 that automatically when hoosky set the path and no other hooks share the directory; it
 never removes a `core.hooksPath` you configured yourself.
 
+The default/global install resolves `~/...` and the XDG config dir from `HOME`; if `HOME`
+is unset it exits with a clear error telling you to set it or use `--dir`/`--all`.
+Per-repo installs do not need `HOME`.
+
 The file is named `prepare-commit-msg`, and that's what it installs as — Git's
 `prepare-commit-msg` hook. It is not the `pre-commit.com` framework and not the
 sibling `organiqbit-hooks` TypeScript project. For dogfooding, refresh the hook in the

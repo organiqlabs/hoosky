@@ -16,6 +16,17 @@ HOOK_NAME="prepare-commit-msg"
 
 err()  { printf 'hoosky-install: %s\n' "$*" >&2; }
 
+# HOME is needed to resolve ~/... in a global core.hooksPath and to compute the
+# default XDG config dir. Under `set -u` an unset HOME aborts with an opaque
+# "unbound variable"; fail with an actionable message instead. Installs that do
+# not resolve a home-relative path (e.g. --dir) never call this.
+require_home() {
+  if [ -z "${HOME:-}" ]; then
+    err "HOME is not set; cannot resolve the global git hooks directory. Set HOME, or pass --dir PATH / --all ROOT to install into specific repositories."
+    return 1
+  fi
+}
+
 usage() {
   # Unquoted heredoc so the examples follow TAG above; the one literal ${...} is escaped.
   cat <<EOF
@@ -98,8 +109,8 @@ discover_repos() {
 # there is no single directory to act on globally).
 expand_hooks_path() {
   case "$1" in
-    "~/"*) printf '%s\n' "$HOME/${1#'~/'}" ;;
-    "~")   printf '%s\n' "$HOME" ;;
+    "~/"*) require_home || return 1; printf '%s\n' "$HOME/${1#'~/'}" ;;
+    "~")   require_home || return 1; printf '%s\n' "$HOME" ;;
     /*)    printf '%s\n' "$1" ;;
     *)     return 1 ;;
   esac
@@ -120,6 +131,7 @@ global_hooks_dir() {
     printf '%s\n' "$expanded"
     return 0
   fi
+  require_home || return 1
   if [ -n "${XDG_CONFIG_HOME:-}" ]; then
     case "$XDG_CONFIG_HOME" in
       /*) xdg="$XDG_CONFIG_HOME" ;;

@@ -100,8 +100,13 @@ downloads the release tag defined by `TAG` in `install.sh`, not the worktree. Se
 ## Verify
 
 - `make test` is the single source of truth for all local gates (defined in `Makefile`);
-  `make help` lists the install/uninstall/checksums/generate-excludes targets. Don't add a new
-  install or test command to the docs without adding a Makefile target first.
+  `make help` lists the install/uninstall/checksums/generate-excludes/check-installed-hook
+  targets. Don't add a new install or test command to the docs without adding a Makefile target
+  first.
+- `make check-installed-hook` is the dogfooding drift guard: it compares the
+  hooksPath-resolved installed hook against the published hash in `checksums.txt`. It is
+  environment-dependent and deliberately outside `make test`. If it reports STALE, refresh
+  the local copy with `install -m755 prepare-commit-msg "$(git rev-parse --git-path hooks)/prepare-commit-msg"`.
 - The secret deny-list has four generated copies: hook `EXCLUDES`, the README and AGENTS
   lists, and the sentinel fixture. `secret-excludes.registry` is the only source of truth;
   `make generate-excludes` rewrites all four and `make check-generated` (part of `make test`)

@@ -463,39 +463,34 @@ r=$(make_repo curlfail); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_EXIT=7)
 if [ "$rc" = 0 ] && grep -q 'no message generated' "$ROOT/stderr"; then unchanged "$m" "curl failure tolerated"; else bad "curl failure tolerated (rc=$rc)"; fi
 
-# 13. Oversized diff: the condensed prompt no longer carries the truncation note, so pin
-# that an oversized staged diff does not block the draft and the line-boundary branch
-# still exists in the hook.
+# 13. Oversized diff: the draft is still produced, the note appears in the actual
+# request, and the tail of the staged diff never reaches the API.
 r=$(make_big_repo trunc); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json" GEMINI_MAX_DIFF_CHARS=400)
 if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(' \
-  && grep -qF 'cut at a line boundary' "$HOOK" \
+  && grep -qF 'cut at a line boundary.' "$r/prompt.json" \
   && ! grep -q 'TAILMARKER-ZZZ' "$r/prompt.json"; then
   ok "oversized diff does not block the draft"; else bad "oversized diff (rc=$rc)"; fi
 
-# 14. Oversized diff with no newline inside the cut: no crash, raw-slice branch retained.
+# 14. Oversized diff with no newline inside the cut: the raw-slice note is in the request.
 r=$(make_longname_repo longn); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json" GEMINI_MAX_DIFF_CHARS=40)
 if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(' \
-  && grep -qF 'no line boundary in the cut' "$HOOK"; then
+  && grep -qF 'no line boundary in the cut.' "$r/prompt.json"; then
   ok "no-newline cut falls back to raw slice"; else bad "no-newline cut falls back (rc=$rc)"; fi
 
-# 15. Staged .env changes never reach the API body (the hook keeps the exclusion contract
-# in source; the condensed prompt itself no longer carries the diff).
+# 15. Staged .env changes never reach the API body.
 r=$(make_env_repo env); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
-if [ "$rc" = 0 ] && grep -qF ':(exclude,icase)*.env' "$HOOK" \
+if [ "$rc" = 0 ] \
   && ! grep -q 'SUPERSECRET-123' "$r/prompt.json" && ! grep -q 'SUPERSECRET-456' "$r/prompt.json"; then
   ok ".env contents never sent"; else bad ".env contents never sent (rc=$rc)"; fi
 
-# 16. Sentinel matrix: no excluded content leaks, and the exclusion patterns are present.
+# 16. Sentinel matrix: no excluded content leaks into the actual request.
 r=$(make_sentinel_repo matrix); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
 hits=$(grep -oE 'SEN-[A-Z0-9-]+' "$r/prompt.json" 2>/dev/null | sort -u | tr '\n' ' ')
-if [ "$rc" = 0 ] && [ -z "$hits" ] \
-  && grep -qF ':(exclude,icase)*.env' "$HOOK" \
-  && grep -qF ':(exclude,icase)*.pem' "$HOOK" \
-  && grep -qF ':(exclude,icase)*.tfstate*' "$HOOK"; then
+if [ "$rc" = 0 ] && [ -z "$hits" ]; then
   ok "sentinel matrix: no excluded file content sent"
 else bad "sentinel matrix: leaked sentinels: ${hits:-none} (rc=$rc)"; fi
 
@@ -522,16 +517,32 @@ for t in 0 abc 100; do
   if [ "$rc" = 0 ] && head -1 "$m" | grep -q '^feat(scripts)'; then ok "GEMINI_TIMEOUT=$t falls back"; else bad "GEMINI_TIMEOUT=$t (rc=$rc)"; fi
 done
 
-# 17b. Input-token budget still derives the diff cap in source (cap = tokens*3 - 6000,
-# floored at 2000, with an explicit cap clamped to the derived ceiling). The condensed
-# prompt no longer echoes the derived cap, so this is a static source-contract check.
-if grep -qF 'CHARS_PER_TOKEN=3' "$HOOK" \
-  && grep -qF 'PROMPT_OVERHEAD_CHARS=6000' "$HOOK" \
-  && grep -qF 'MAX_INPUT_TOKENS * CHARS_PER_TOKEN - PROMPT_OVERHEAD_CHARS' "$HOOK" \
-  && grep -qF 'TOKEN_DERIVED_CHARS" -lt 2000' "$HOOK" \
-  && grep -qF 'MAX_DIFF_CHARS" -gt "$TOKEN_DERIVED_CHARS' "$HOOK"; then
-  ok "diff cap derived from input-token budget (source contract)"
-else bad "diff cap derived from input-token budget (source contract)"; fi
+# 17b. Input-token budget derives the diff cap: the note printed in the actual request
+# names the cap and the budget, so the formula, floor and clamp are all observable.
+r=$(make_repo capbudget)
+for i in $(seq 1 800); do
+  printf 'cap padding line %04d with enough words to cross the default derived ceiling of eighteen thousand characters\n' "$i"
+done > "$r/cap.txt"
+git -C "$r" add cap.txt
+cap_ok=1
+# default: 8000 tokens * 3 - 6000 = 18000
+m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/p1.json")
+if [ "$rc" != 0 ] || ! grep -qF 'Diff truncated to the first 18000 characters (input budget 8000 tokens)' "$r/p1.json"; then cap_ok=0; fi
+# lower budget: 3000 * 3 - 6000 = 3000
+m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/p2.json" GEMINI_MAX_INPUT_TOKENS=3000)
+if [ "$rc" != 0 ] || ! grep -qF 'Diff truncated to the first 3000 characters (input budget 3000 tokens)' "$r/p2.json"; then cap_ok=0; fi
+# floor: 1000 * 3 - 6000 is negative, so the 2000-char floor applies
+m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/p3.json" GEMINI_MAX_INPUT_TOKENS=1000)
+if [ "$rc" != 0 ] || ! grep -qF 'Diff truncated to the first 2000 characters (input budget 1000 tokens)' "$r/p3.json"; then cap_ok=0; fi
+# clamp: an explicit 99999 is narrowed to the 3000-char token-derived ceiling
+m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/p4.json" GEMINI_MAX_INPUT_TOKENS=3000 GEMINI_MAX_DIFF_CHARS=99999)
+if [ "$rc" != 0 ] || ! grep -qF 'Diff truncated to the first 3000 characters (input budget 3000 tokens)' "$r/p4.json"; then cap_ok=0; fi
+if [ "$cap_ok" = 1 ]; then ok "diff cap derived from input-token budget"
+else bad "diff cap derived from input-token budget (cap_ok=$cap_ok)"; fi
 # Every bad/zero/absurd token budget must still leave a working hook (no arithmetic abort).
 for bad in abc 0 -5 99999999999999999999; do
   r=$(make_repo "badtok-$(printf '%s' "$bad" | tr -c 'a-zA-Z0-9' '_')"); m=$(fresh_msg "$r")
@@ -631,8 +642,8 @@ if [ "$rc" = 0 ] && [ -n "$s" ] && [ "${s#feat}" != "$s" ] \
   ok "MAX_SUBJECT_CHARS=00 / BODY_WRAP_CHARS=00 ignored safely"; else bad "MAX_SUBJECT_CHARS=00 / BODY_WRAP_CHARS=00 ignored (rc=$rc)"; fi
 
 # 26. --no-ext-diff --no-textconv: repo-local diff drivers cannot rewrite the payload.
-# With the condensed prompt carrying no diff, verify the flags in source and that no
-# injected sentinel reaches the captured request.
+# The injected driver sentinels would appear in the captured request if either flag
+# were missing.
 r="$ROOT/difftool"; mkdir -p "$r"
 git -C "$r" init -q; git -C "$r" config user.email test@example.com; git -C "$r" config user.name test
 printf 'base\n' > "$r/file.txt"; printf 'baseext\n' > "$r/ext.txt"
@@ -643,12 +654,12 @@ git -C "$r" config diff.mydriver.textconv 'printf TEXCONVB-SENTINEL'
 printf 'file.txt diff=mydriver\next.txt diff=extdriver\n' > "$r/.gitattributes"; git -C "$r" add .gitattributes
 m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
-if [ "$rc" = 0 ] && grep -qF -- '--no-ext-diff --no-textconv' "$HOOK" \
+if [ "$rc" = 0 ] \
   && ! grep -qE 'TEXCONVB-SENTINEL|EXT-DIFF-INJECTED-SENTINEL' "$r/prompt.json"; then
-  ok "repo-local diff drivers disabled (source contract)"; else bad "repo-local diff drivers disabled (rc=$rc)"; fi
+  ok "repo-local diff drivers disabled"; else bad "repo-local diff drivers disabled (rc=$rc)"; fi
 
-# 27. '--stat is capped': the 4000-byte cap is still encoded in the hook; the condensed
-# prompt no longer carries the stat, so verify the source contract instead.
+# 27. '--stat is capped': the request carries a stat section with the truncation marker
+# when it exceeds 4000 bytes.
 r="$ROOT/manystat"; mkdir -p "$r"
 git -C "$r" init -q; git -C "$r" config user.email test@example.com; git -C "$r" config user.name test
 pad='padpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpa'
@@ -658,10 +669,8 @@ for i in $(seq 1 150); do printf 'change %s\n' "$i" >> "$r/${pad}${i}.txt"; done
 git -C "$r" add .
 m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
-if [ "$rc" = 0 ] && grep -qF '[ "$stat_bytes" -gt 4000 ]' "$HOOK" \
-  && grep -qF 'tail -c 4000' "$HOOK" \
-  && grep -qF 'Diff stat truncated to the last 4000 bytes' "$HOOK"; then
-  ok "stat capped at 4000 bytes (source contract)"; else bad "stat capped at 4000 bytes (rc=$rc)"; fi
+if [ "$rc" = 0 ] && grep -qF 'Diff stat truncated to the last 4000 bytes.' "$r/prompt.json"; then
+  ok "stat capped at 4000 bytes"; else bad "stat capped at 4000 bytes (rc=$rc)"; fi
 
 # 28. Failure paths warn + exit 0: unreadable msg file; unwritable msg dir (skipped as root)
 if [ "$(id -u)" != 0 ]; then
@@ -893,23 +902,32 @@ r=$(make_repo mksib); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$MKSIB:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
 if [ "$rc" = 0 ] && grep -q 'could not create temp sibling' "$ROOT/stderr" && [ -e "$r/prompt.json" ]; then unchanged "$m" "sibling mktemp failure: warns, API was called, exits 0, file unchanged"; else bad "sibling mktemp failure: warns, exits 0 (rc=$rc)"; fi
 
-# 39. Small stat (no cut): the whole stat is kept verbatim (source contract).
-if grep -qF 'STAT="$(cat "$TMP/stat.txt")"' "$HOOK"; then
-  ok "stat section (no cut) kept verbatim (source contract)"
-else bad "stat section (no cut) kept verbatim (source contract)"; fi
+# 39. Small stat (no cut): a known short stat passes through verbatim, with no cap marker.
+GSTAT_SMALL="$ROOT/git-stat-small"; mkdir -p "$GSTAT_SMALL"
+cat > "$GSTAT_SMALL/git" <<'EOF'
+#!/usr/bin/env bash
+case " $* " in
+  *--stat*)  printf 'SMALLSTAT-MARKER 1 file changed, 1 insertion(+)\n'; exit 0 ;;
+  *log*)     printf 'some subject\n'; exit 0 ;;
+  *branch*)  printf 'main\n'; exit 0 ;;
+  *)         printf 'diff --git a/f.txt b/f.txt\nindex 000 111 100644\n--- a/f.txt\n+++ b/f.txt\n@@ -1 +1 @@\n+x\n'; exit 0 ;;
+esac
+EOF
+chmod +x "$GSTAT_SMALL/git"
+r=$(make_repo smallstat); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$GSTAT_SMALL:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
+if [ "$rc" = 0 ] && grep -qF 'SMALLSTAT-MARKER' "$r/prompt.json" \
+  && ! grep -qF 'Diff stat truncated' "$r/prompt.json"; then
+  ok "stat section (no cut) kept verbatim"
+else bad "stat section (no cut) kept verbatim (rc=$rc)"; fi
 
-# 40. Contract tripwire: set -u in effect, never errexit — in any spelling (-e, -eu,
-# -euo pipefail, -o errexit); INT/TERM traps present. Cluster letter order must not
-# matter: `set -eu` is the canonical way to break the never-block-a-commit contract.
-if grep -qE '^[[:space:]]*set[[:space:]]+(-[A-Za-z]*u|-o[[:space:]]+nounset)' "$HOOK" \
-  && ! grep -qE '^[[:space:]]*set[[:space:]]+(-[A-Za-z]*e|-o[[:space:]]+errexit)' "$HOOK" \
-  && grep -qF "trap 'exit 130' INT" "$HOOK" \
-  && grep -qF "trap 'exit 143' TERM" "$HOOK"; then
-  ok "hook sets -u, never sets -e, traps INT/TERM to 130/143"
-else bad "hook sets -u, never sets -e, traps INT/TERM to 130/143"; fi
+# 40. Shell-mode literals were previously pinned here. They have no black-box observable:
+# the INT/TERM traps are exercised behaviorally below (#52/#53), and no-errexit is covered
+# by the failure-path tests (curl failure, git failure, mktemp failure). Removed rather
+# than keeping a source-grep that merely pins spelling.
 
-# 41. Unset knobs: --max-time defaults to 20 (the derived diff cap is no longer echoed
-# in the condensed prompt; its source contract is pinned in 17b).
+# 41. Unset knobs: --max-time defaults to 20 (the derived diff cap is verified from
+# the request's truncation note in 17b).
 r=$(make_repo unsetdefaults); m=$(fresh_msg "$r")
 for i in $(seq 1 1000); do printf 'padding line number %s with extra words to fill space here\n' "$i"; done >> "$r/file.txt"
 git -C "$r" add file.txt
@@ -1005,10 +1023,10 @@ git -C "$r" add -A
 m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
 ev=0
-grep -qF ':(exclude,icase)*.env' "$HOOK" || ev=1
-grep -qF ':(exclude,icase)*.env.*' "$HOOK" || ev=1
 ! grep -q 'do-not-send' "$r/prompt.json" || ev=1
-if [ "$rc" = 0 ] && [ "$ev" = 0 ]; then ok ".env exclusion patterns present in source"; else bad ".env exclusion patterns (ev=$ev, rc=$rc)"; fi
+grep -qF 'SEN-ENVKEEP-1' "$r/prompt.json" || ev=1
+grep -qF 'SEN-ENVKEEP-2' "$r/prompt.json" || ev=1
+if [ "$rc" = 0 ] && [ "$ev" = 0 ]; then ok ".env exclusion keeps non-env files"; else bad ".env exclusion keeps non-env files (ev=$ev, rc=$rc)"; fi
 
 # 47. Stat cut with the window starting exactly on a line boundary keeps all lines (no "partial line" drop)
 GSTAT="$ROOT/git-stat"; mkdir -p "$GSTAT"
@@ -1031,10 +1049,12 @@ EOF
 chmod +x "$GSTAT/git"
 r=$(make_repo statboundary); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$GSTAT:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
-if [ "$rc" = 0 ] && grep -qF "before" "$HOOK" && grep -qF "'0a'" "$HOOK" \
-  && grep -qF 'tail -c 4000 "$TMP/stat.txt"' "$HOOK"; then
-  ok "stat line-boundary logic present (source contract)"
-else bad "stat line-boundary logic (rc=$rc)"; fi
+# A boundary-aligned cut keeps every complete line (B01..B40) and drops the A run.
+if [ "$rc" = 0 ] && grep -qF 'Diff stat truncated to the last 4000 bytes.' "$r/prompt.json" \
+  && grep -qF 'lineB01.txt' "$r/prompt.json" && grep -qF 'lineB40.txt' "$r/prompt.json" \
+  && ! grep -qE 'A{100}' "$r/prompt.json"; then
+  ok "stat line-boundary keeps complete lines"
+else bad "stat line-boundary keeps complete lines (rc=$rc)"; fi
 
 # 48. UTF-8 locale: the 60-char subject limit counts characters, not bytes (LC_ALL=C counts bytes)
 utf8_subj=$(printf 'feat: '; printf '\303\251%.0s' $(seq 30))   # 'feat: ' + 30x e-acute (2 bytes) = 36 chars / 66 bytes
@@ -1054,8 +1074,9 @@ EOF
 chmod +x "$GWC/wc"
 r=$(make_repo wcfail); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$GWC:$GSTAT:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
-if [ "$rc" = 0 ] && grep -qF '*[!0-9]*) stat_bytes=0' "$HOOK"; then
-  ok "wc failure: stat kept whole (source contract)"
+if [ "$rc" = 0 ] && grep -qF 'lineB40.txt' "$r/prompt.json" \
+  && ! grep -qF 'Diff stat truncated' "$r/prompt.json"; then
+  ok "wc failure: stat kept whole"
 else bad "wc failure: stat kept whole (rc=$rc)"; fi
 
 # 50. Stat is one single >4000-byte line with no newline: the raw 4000-byte slice is kept
@@ -1074,8 +1095,9 @@ EOF
 chmod +x "$GSTAT1/git"
 r=$(make_repo statraw); m=$(fresh_msg "$r")
 rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$GSTAT1:$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
-if [ "$rc" = 0 ] && grep -qF '[ -z "$STAT" ] && STAT="$(tail -c 4000 "$TMP/stat.txt")"' "$HOOK"; then
-  ok "single over-long stat line: raw 4000-byte slice kept (source contract)"
+if [ "$rc" = 0 ] && grep -qF 'Diff stat truncated to the last 4000 bytes.' "$r/prompt.json" \
+  && grep -qE 'A{4000}' "$r/prompt.json"; then
+  ok "single over-long stat line: raw 4000-byte slice kept"
 else bad "single over-long stat line: raw 4000-byte slice kept (rc=$rc)"; fi
 
 # 51. curl refuses the oversized (>10 MiB) response via --max-filesize: hook no-ops, message untouched
@@ -1113,18 +1135,18 @@ rc_int=$( cd "$r" && set -m && {
 if ! grep -qE '^feat' "$m" && grep -q '^# Please enter' "$m"; then untouched_i=1; else untouched_i=0; fi
 if [ "$rc_int" = 130 ] && [ "$untouched_i" = 1 ]; then ok "INT in flight: exit 130, message unchanged"; else bad "INT in flight: exit 130 (rc=$rc_int)"; fi
 
-# Heredoc shell-safety: the unquoted prompt heredoc must contain no CR, no bare $
-# (every $ must be an intended ${...} expansion), and no backticks (a literal one
-# aborts as command substitution and sends an empty prompt).
-heredoc="$(awk '/^cat > "\$TMP\/prompt.txt" <<EOF$/{f=1;next} /^EOF$/{f=0} f' "$HOOK")"
-hs_ok=1
-if printf '%s' "$heredoc" | grep -q $'\r'; then hs_ok=0; fi
-if printf '%s' "$heredoc" | grep -q '`'; then hs_ok=0; fi
-dollars="$(printf '%s' "$heredoc" | grep -o '\$' | wc -l)"
-braces="$(printf '%s' "$heredoc" | grep -o '\${' | wc -l)"
-[ "$dollars" -eq "$braces" ] || hs_ok=0
-[ -n "$heredoc" ] || hs_ok=0
-if [ "$hs_ok" = 1 ]; then ok "prompt heredoc has no CR, bare \$, or backtick"; else bad "prompt heredoc has no CR, bare \$, or backtick"; fi
+# Prompt shell-safety, observed on the rendered request: a CR, an unexpanded ${...},
+# or a stray backtick in the unquoted heredoc would mangle or empty the prompt.
+r=$(make_repo promptrender); m=$(fresh_msg "$r")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$r/prompt.json")
+if [ "$rc" = 0 ] && grep -qF 'Diff stat:' "$r/prompt.json" \
+  && grep -qF 'Staged diff:' "$r/prompt.json" \
+  && grep -qF 'Branch:' "$r/prompt.json" \
+  && grep -qF 'Recent commit subjects' "$r/prompt.json" \
+  && ! grep -q '${' "$r/prompt.json" && ! grep -q '`' "$r/prompt.json" \
+  && ! grep -q $'\r' "$r/prompt.json"; then
+  ok "prompt renders with no CR, bare \$, or backtick"
+else bad "prompt renders with no CR, bare \$, or backtick (rc=$rc)"; fi
 
 printf '%s\n' "---"
 [ "$fail" = 0 ] && echo "all tests passed ($n tests)" || echo "FAILURES ($n tests)"

@@ -308,13 +308,13 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
 rc=0
 if [ "$GLOBAL" = 1 ] || { [ ${#DIRS[@]} -eq 0 ] && [ -z "$ALL_ROOT" ]; }; then
   gh="$(global_hooks_dir)" || exit 1
-  ( install_one global "$gh" ) || rc=1
+  install_one global "$gh" || rc=1
 else
   found=0
   while IFS= read -r repo; do
     case "$repo" in '') continue ;; esac
     found=1
-    ( install_one repo "$repo" ) || rc=1
+    install_one repo "$repo" || rc=1
   done < <(discover_repos)
   if [ "$found" = 0 ]; then
     err "no git repositories found${ALL_ROOT:+ under '$ALL_ROOT'}"

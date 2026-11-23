@@ -56,12 +56,18 @@ exit 99
 EOF
 chmod +x "$DENY_BIN/curl"
 
+# Initialise an existing scratch directory as a deterministic git repo. The suite runs
+# with GIT_CONFIG_GLOBAL=/dev/null, so these local settings are what commits use.
+git_init() {  # <dir>
+  git -C "$1" init -q
+  git -C "$1" config user.email test@example.com
+  git -C "$1" config user.name test
+}
+
 # Each case works in a fresh scratch repo with one staged change.
 make_repo() {
   local d="$ROOT/repo-$1"; mkdir -p "$d"
-  git -C "$d" init -q
-  git -C "$d" config user.email test@example.com
-  git -C "$d" config user.name test
+  git_init "$d"
   printf 'base\n' > "$d/file.txt"
   git -C "$d" add . && git -C "$d" commit -qm 'init'
   printf 'change\n' >> "$d/file.txt"
@@ -73,9 +79,7 @@ make_repo() {
 # root-commit path (RECENT degrades to empty) still yields a callable payload.
 make_unborn_repo() {
   local d="$ROOT/unborn-$1"; mkdir -p "$d"
-  git -C "$d" init -q
-  git -C "$d" config user.email test@example.com
-  git -C "$d" config user.name test
+  git_init "$d"
   printf 'first\n' > "$d/file.txt"
   git -C "$d" add file.txt
   printf '%s' "$d"
@@ -85,9 +89,7 @@ make_unborn_repo() {
 # --show-current` exits 0 with empty output there, so BRANCH must not render blank.
 make_detached_repo() {
   local d="$ROOT/detached-$1"; mkdir -p "$d"
-  git -C "$d" init -q
-  git -C "$d" config user.email test@example.com
-  git -C "$d" config user.name test
+  git_init "$d"
   printf 'base\n' > "$d/file.txt"
   git -C "$d" add . && git -C "$d" commit -qm 'init'
   git -C "$d" checkout -q --detach HEAD
@@ -99,9 +101,7 @@ make_detached_repo() {
 # Repo whose staged file is a long line far bigger than the 400-char cut point.
 make_big_repo() {
   local d="$ROOT/big-$1"; mkdir -p "$d"
-  git -C "$d" init -q
-  git -C "$d" config user.email test@example.com
-  git -C "$d" config user.name test
+  git_init "$d"
   printf 'base\n' > "$d/big.txt"
   git -C "$d" add . && git -C "$d" commit -qm 'init'
   for i in $(seq 1 60); do printf 'padding line number %s with some extra words to fill space\n' "$i"; done > "$d/big.txt"
@@ -113,9 +113,7 @@ make_big_repo() {
 # Repo whose staged diff starts with a path longer than MAX_DIFF_CHARS (fallback).
 make_longname_repo() {
   local d="$ROOT/long-$1"; mkdir -p "$d"
-  git -C "$d" init -q
-  git -C "$d" config user.email test@example.com
-  git -C "$d" config user.name test
+  git_init "$d"
   local fname='padpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpad'
   printf 'base\n' > "$d/$fname.txt"
   git -C "$d" add . && git -C "$d" commit -qm 'init'
@@ -127,9 +125,7 @@ make_longname_repo() {
 # Repo with a staged .env change that must never reach the API.
 make_env_repo() {
   local d="$ROOT/env-$1"; mkdir -p "$d"
-  git -C "$d" init -q
-  git -C "$d" config user.email test@example.com
-  git -C "$d" config user.name test
+  git_init "$d"
   printf 'SECRET=SUPERSECRET-123\n' > "$d/.env"
   printf 'base\n' > "$d/file.txt"
   git -C "$d" add . && git -C "$d" commit -qm 'init'
@@ -143,9 +139,7 @@ make_env_repo() {
 # sentinel must never reach the API payload (root, nested, and icase variants).
 make_sentinel_repo() {
   local d="$ROOT/sent-$1"; mkdir -p "$d"
-  git -C "$d" init -q
-  git -C "$d" config user.email test@example.com
-  git -C "$d" config user.name test
+  git_init "$d"
   printf 'base\n' > "$d/file.txt"
   git -C "$d" add . && git -C "$d" commit -qm 'init'
   printf 'change\n' >> "$d/file.txt"
@@ -645,7 +639,7 @@ if [ "$rc" = 0 ] && [ -n "$s" ] && [ "${s#feat}" != "$s" ] \
 # The injected driver sentinels would appear in the captured request if either flag
 # were missing.
 r="$ROOT/difftool"; mkdir -p "$r"
-git -C "$r" init -q; git -C "$r" config user.email test@example.com; git -C "$r" config user.name test
+git_init "$r"
 printf 'base\n' > "$r/file.txt"; printf 'baseext\n' > "$r/ext.txt"
 git -C "$r" add . && git -C "$r" commit -qm init
 printf 'change\n' >> "$r/file.txt"; printf 'changeext\n' >> "$r/ext.txt"; git -C "$r" add .
@@ -661,7 +655,7 @@ if [ "$rc" = 0 ] \
 # 27. '--stat is capped': the request carries a stat section with the truncation marker
 # when it exceeds 4000 bytes.
 r="$ROOT/manystat"; mkdir -p "$r"
-git -C "$r" init -q; git -C "$r" config user.email test@example.com; git -C "$r" config user.name test
+git_init "$r"
 pad='padpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpadpa'
 for i in $(seq 1 150); do printf 'base %s\n' "$i" > "$r/${pad}${i}.txt"; done
 git -C "$r" add . && git -C "$r" commit -qm 'many baseline'

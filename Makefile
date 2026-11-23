@@ -11,14 +11,17 @@ HOOK_TEST    := $(HOOK).test.sh
 INSTALL_TEST := install.test.sh
 VERSION_CHK  := check-version.sh
 VERSION_TEST := check-version.test.sh
+GENERATOR    := generate-excludes.sh
+REGISTRY     := secret-excludes.registry
 # shasum -a 256 is the macOS/BSD fallback; both emit "<hash>  <file>".
 SHA256       := $(shell if command -v sha256sum >/dev/null 2>&1; then printf sha256sum; else printf 'shasum -a 256'; fi)
 
-.PHONY: help check-syntax check-version check-version-test check-hook check-install check-checksums test checksums install uninstall
+.PHONY: help check-syntax check-generated generate-excludes check-version check-version-test check-hook check-install check-checksums test checksums install uninstall
 
 help:  ## list targets
 	@printf 'hoosky targets (single source of truth for install/test):\n'
 	@printf '  make test                  run every local gate\n'
+	@printf '  make generate-excludes     regenerate deny-list copies from secret-excludes.registry\n'
 	@printf '  make checksums             regenerate checksums.txt after a hook/installer edit\n'
 	@printf '  make install [ARGS="..."] run install.sh (global by default)\n'
 	@printf '  make uninstall             run install.sh --uninstall\n'
@@ -31,6 +34,13 @@ check-syntax:  ## bash -n on all shell scripts
 	bash -n $(INSTALL_TEST)
 	bash -n $(VERSION_CHK)
 	bash -n $(VERSION_TEST)
+	bash -n $(GENERATOR)
+
+check-generated:  ## generated deny-list blocks match the registry
+	bash $(GENERATOR) --check
+
+generate-excludes:  ## regenerate the four deny-list copies from the registry
+	bash $(GENERATOR)
 
 check-version:  ## every vX.Y.Z reference matches install.sh TAG
 	bash $(VERSION_CHK)
@@ -47,9 +57,10 @@ check-install:  ## installer suite (stubs curl; sandboxed HOME/gitconfig)
 check-checksums:  ## published hashes match the working-tree hook and installer
 	$(SHA256) $(HOOK) $(INSTALLER) | diff - $(CHECKSUMS)
 
-# Checksums first: a stale checksums.txt makes every installer case fail with a
-# confusing "refusing to install" instead of telling you to regenerate it.
-test: check-syntax check-version check-version-test check-checksums check-hook check-install  ## run every local gate
+# Generated blocks and checksums first: a stale block or checksum makes later
+# cases fail with confusing "refusing to install"/stale-string symptoms instead
+# of telling you to run `make generate-excludes` / `make checksums`.
+test: check-syntax check-generated check-version check-version-test check-checksums check-hook check-install  ## run every local gate
 
 checksums:  ## regenerate the published checksums
 	$(SHA256) $(HOOK) $(INSTALLER) > $(CHECKSUMS)

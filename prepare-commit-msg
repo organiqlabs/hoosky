@@ -176,25 +176,60 @@ SIBLING=""
 trap 'rm -rf "$TMP"; [ -z "$SIBLING" ] || rm -f "$SIBLING"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+# The EXCLUDES array below is generated from secret-excludes.registry. Run
+# `make generate-excludes` after editing the registry; never hand-edit the block.
 # All patterns are `*`-prefixed so they match at any depth (root included) under git's
 # default pathspec magic; case-insensitive everywhere. Do not drop the leading `*`.
-EXCLUDES=(':(exclude,icase)*.env' ':(exclude,icase)*.env.*' ':(exclude,icase)*.envrc*' ':(exclude,icase)*.npmrc' ':(exclude,icase)*.pypirc' ':(exclude,icase)*.netrc'
-          ':(exclude,icase)*.git-credentials' ':(exclude,icase)*credentials*.json'
+# BEGIN GENERATED EXCLUDES
+EXCLUDES=(':(exclude,icase)*.env'
+          ':(exclude,icase)*.env.*'
+          ':(exclude,icase)*.envrc*'
+          ':(exclude,icase)*.npmrc'
+          ':(exclude,icase)*.pypirc'
+          ':(exclude,icase)*.netrc'
+          ':(exclude,icase)*.git-credentials'
+          ':(exclude,icase)*credentials*.json'
           ':(exclude,icase)*secrets.*'
-          ':(exclude,icase)*id_rsa*' ':(exclude,icase)*id_dsa*' ':(exclude,icase)*id_ecdsa*' ':(exclude,icase)*id_ed25519*'
-          ':(exclude,icase)*.pgpass' ':(exclude,icase)*.htpasswd'
-          ':(exclude,icase)*.docker/config.json' ':(exclude,icase)*.kube/config'
-          ':(exclude,icase)*.aws/credentials' ':(exclude,icase)*.m2/settings.xml' ':(exclude,icase)*.ppk'
-          ':(exclude,icase)*.p12' ':(exclude,icase)*.pfx' ':(exclude,icase)*.jks' ':(exclude,icase)*.keystore'
-          ':(exclude,icase)*.pem' ':(exclude,icase)*.key'
-          ':(exclude,icase)*.tfstate*' ':(exclude,icase)*.vault-token' ':(exclude,icase)*.vault_pass'
-          ':(exclude,icase)*vault-password*' ':(exclude,icase)*vault_password*' ':(exclude,icase)*.keytab'
-          ':(exclude,icase)*.p8' ':(exclude,icase)*.dockercfg' ':(exclude,icase)*.yarnrc*'
-          ':(exclude,icase)*_netrc' ':(exclude,icase)*.asc' ':(exclude,icase)*.gpg'
-          ':(exclude,icase)*.cargo/credentials*' ':(exclude,icase)*.gem/credentials'
-          ':(exclude,icase)*.lock' ':(exclude,icase)*package-lock.json' ':(exclude,icase)*npm-shrinkwrap.json'
-          ':(exclude,icase)*pnpm-lock.yaml' ':(exclude,icase)*bun.lockb'
-          ':(exclude,icase)*.min.js' ':(exclude,icase)*.min.css' ':(exclude,icase)*.map')
+          ':(exclude,icase)*id_rsa*'
+          ':(exclude,icase)*id_dsa*'
+          ':(exclude,icase)*id_ecdsa*'
+          ':(exclude,icase)*id_ed25519*'
+          ':(exclude,icase)*.pgpass'
+          ':(exclude,icase)*.htpasswd'
+          ':(exclude,icase)*.docker/config.json'
+          ':(exclude,icase)*.kube/config'
+          ':(exclude,icase)*.aws/credentials'
+          ':(exclude,icase)*.m2/settings.xml'
+          ':(exclude,icase)*.ppk'
+          ':(exclude,icase)*.p12'
+          ':(exclude,icase)*.pfx'
+          ':(exclude,icase)*.jks'
+          ':(exclude,icase)*.keystore'
+          ':(exclude,icase)*.pem'
+          ':(exclude,icase)*.key'
+          ':(exclude,icase)*.tfstate*'
+          ':(exclude,icase)*.vault-token'
+          ':(exclude,icase)*.vault_pass'
+          ':(exclude,icase)*vault-password*'
+          ':(exclude,icase)*vault_password*'
+          ':(exclude,icase)*.keytab'
+          ':(exclude,icase)*.p8'
+          ':(exclude,icase)*.dockercfg'
+          ':(exclude,icase)*.yarnrc*'
+          ':(exclude,icase)*_netrc'
+          ':(exclude,icase)*.asc'
+          ':(exclude,icase)*.gpg'
+          ':(exclude,icase)*.cargo/credentials*'
+          ':(exclude,icase)*.gem/credentials'
+          ':(exclude,icase)*.lock'
+          ':(exclude,icase)*package-lock.json'
+          ':(exclude,icase)*npm-shrinkwrap.json'
+          ':(exclude,icase)*pnpm-lock.yaml'
+          ':(exclude,icase)*bun.lockb'
+          ':(exclude,icase)*.min.js'
+          ':(exclude,icase)*.min.css'
+          ':(exclude,icase)*.map')
+# END GENERATED EXCLUDES
 
 FULL_DIFF="$(git diff --no-ext-diff --no-textconv --cached --no-color --unified=2 -- . "${EXCLUDES[@]}" 2>/dev/null)"
 [ -n "$FULL_DIFF" ] || exit 0

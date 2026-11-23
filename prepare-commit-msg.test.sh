@@ -153,9 +153,11 @@ make_sentinel_repo() {
   local path sentinel
   while IFS='|' read -r path sentinel; do
     [ -z "$path" ] && continue
+    case "$path" in \#*) continue ;; esac
     mkdir -p "$d/$(dirname "$path")"
     printf '%s\n' "$sentinel" > "$d/$path"
   done <<'FIX'
+# BEGIN GENERATED SENTINELS
 secret.pem|SEN-PEM-1
 infra/prod.tfstate|SEN-TFSTATE-1
 sub/prod.tfstate.backup|SEN-TFSBAK-1
@@ -243,6 +245,7 @@ vault-password|SEN-VALTPW-1
 sub/vault-password.txt|SEN-VALTPWS-1
 vault_password|SEN-VALTPW2-1
 sub/vault_password.bak|SEN-VALTPW2S-1
+# END GENERATED SENTINELS
 FIX
   git -C "$d" add .
   printf '%s' "$d"

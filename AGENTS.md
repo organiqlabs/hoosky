@@ -44,20 +44,25 @@ downloads the release tag defined by `TAG` in `install.sh`, not the worktree. Se
   unsafe for the curl config (`"`, `\`, CR, LF); the response is unparseable, empty after
   fence-stripping, or over 10 MiB (`--max-filesize 10485760`).
 - Diff excludes (case-insensitive, matched at any depth — root and nested; `*`-prefixed
-  patterns apply everywhere): `*.env`, `*.env.*`, `*.envrc*`, private-key/credential material (`*.pem`, `*.key`,
-  `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.ppk`, `*.asc`, `*.gpg`, `*id_rsa*`, `*id_dsa*`, `*id_ecdsa*`,
-  `*id_ed25519*`, `*.aws/credentials`, `*.m2/settings.xml`), credential/config files
-  (`*credentials*.json`, `*secrets.*`, `*.git-credentials`, `*.npmrc`, `*.pypirc`,
-  `*.netrc`, `*_netrc`, `*.pgpass`, `*.htpasswd`, `*.docker/config.json`, `*.kube/config`,
-  `*.dockercfg`, `*.cargo/credentials*`, `*.gem/credentials`), Terraform/Vault/Kerberos/Apple material
-  (`*.tfstate*`, `*.vault-token`, `*.vault_pass`, `*vault-password*`, `*vault_password*`, `*.keytab`,
-  `*.p8`), yarnrc auth (`*.yarnrc*`), and
-  lockfiles/minified assets (`*.lock`, `*package-lock.json`, `*pnpm-lock.yaml`,
-  `*npm-shrinkwrap.json`, `*bun.lockb`, `*.min.js`, `*.min.css`, `*.map`).
+  patterns apply everywhere):
+  <!-- BEGIN GENERATED DENY-LIST -->
+  - Environment files: `*.env`, `*.env.*`, `*.envrc*`.
+  - Credential and config files: `*.npmrc`, `*.pypirc`, `*.netrc`, `*.git-credentials`, `*credentials*.json`, `*secrets.*`, `*.pgpass`, `*.htpasswd`, `*.docker/config.json`, `*.kube/config`, `*.aws/credentials`, `*.m2/settings.xml`, `*.dockercfg`, `*_netrc`, `*.cargo/credentials*`, `*.gem/credentials`.
+  - Private keys and certificates: `*id_rsa*`, `*id_dsa*`, `*id_ecdsa*`, `*id_ed25519*`, `*.ppk`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.pem`, `*.key`, `*.asc`, `*.gpg`.
+  - Terraform material: `*.tfstate*`.
+  - Vault material: `*.vault-token`, `*.vault_pass`, `*vault-password*`, `*vault_password*`.
+  - Kerberos material: `*.keytab`.
+  - Apple keys: `*.p8`.
+  - Yarnrc auth: `*.yarnrc*`.
+  - Lockfiles: `*.lock`, `*package-lock.json`, `*npm-shrinkwrap.json`, `*pnpm-lock.yaml`, `*bun.lockb`.
+  - Minified assets: `*.min.js`, `*.min.css`, `*.map`.
+  <!-- END GENERATED DENY-LIST -->
   The deny-list errs on the safe side by design: a legitimate source file whose name matches an
   exclude pattern (e.g. `*secrets.*`) is kept out of the payload; tightening it risks leaking a real
   credential. Keep these intact — they exist so secrets never reach the API.
-  `prepare-commit-msg.test.sh` has sentinel matrix tests for them (`# 16`).
+  `prepare-commit-msg.test.sh` has sentinel matrix tests for them (`# 16`). The list and the
+  sentinel matrix are generated from `secret-excludes.registry` by `make generate-excludes`;
+  edit only the registry, never the generated blocks.
 - API key goes to curl via `-K -` on stdin, never argv (keeps it out of `ps`). Don't "simplify" this.
 - Diff cap is derived from an **input-token budget**, not a blind constant:
   `cap_chars = GEMINI_MAX_INPUT_TOKENS * 3 - 6000` (floored at 2000), because the diff has to fit
@@ -95,8 +100,13 @@ downloads the release tag defined by `TAG` in `install.sh`, not the worktree. Se
 ## Verify
 
 - `make test` is the single source of truth for all local gates (defined in `Makefile`);
-  `make help` lists the install/uninstall/checksums targets. Don't add a new install or test
-  command to the docs without adding a Makefile target first.
+  `make help` lists the install/uninstall/checksums/generate-excludes targets. Don't add a new
+  install or test command to the docs without adding a Makefile target first.
+- The secret deny-list has four generated copies: hook `EXCLUDES`, the README and AGENTS
+  lists, and the sentinel fixture. `secret-excludes.registry` is the only source of truth;
+  `make generate-excludes` rewrites all four and `make check-generated` (part of `make test`)
+  fails on a stale block. Never hand-edit a generated block. The hook stays self-contained,
+  so the release has no runtime dependency on the registry.
 - Deps: `bash`, `git`, `jq`, `grep`, `make` (curl at runtime; plus required standard userland:
   `tr`, `sed`, `wc`, `tail`, `head`, `dirname`, `cat`, `mktemp`, `mv`, `chmod`, `rm` — the
   unguarded ones degrade silently without blocking the commit).

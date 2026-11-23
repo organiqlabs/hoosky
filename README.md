@@ -108,19 +108,26 @@ mid-line, the raw slice is used and the truncation note says so; the note also n
 budget that caused the cut. API responses over 10 MiB are refused by curl.
 
 Staged secret/credential material is excluded from the diff sent to the API, matched
-at any depth (root and nested), case-insensitively: `.env`, `.env.*` and `.envrc`
-files, private keys and certificates (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
-`*.ppk`, `*.asc`, `*.gpg`, SSH key material incl. `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`), cloud and tool
-credentials (`.aws/credentials`, `.m2/settings.xml`, `.npmrc`, `.netrc`/`_netrc`, `.git-credentials`,
-`.pgpass`, `.htpasswd`, `.pypirc`, `*credentials*.json`, `*secrets.*`, Docker/Kubernetes config,
-`.dockercfg`, cargo/gem credentials), Terraform state (`*.tfstate*`), Vault material
-(`.vault-token`, `.vault_pass`, `*vault-password*`/`*vault_password*`), Kerberos keytabs (`*.keytab`),
-Apple keys (`*.p8`), yarnrc auth (`*.yarnrc*`),
-lockfiles (`*.lock`, `*package-lock.json`, `*pnpm-lock.yaml`, `*npm-shrinkwrap.json`, `*bun.lockb`),
-and minified assets (`*.min.js`, `*.min.css`, `*.map`). The exclude list deliberately errs on the safe
-side: a legitimate file whose name matches an exclude pattern (e.g. `*secrets.*`) is kept out of
-the payload — that is intentional. `.git` history and hook files
-are not part of the payload, and the API key is never exposed in `ps` output.
+at any depth (root and nested), case-insensitively. The generated deny-list is:
+
+<!-- BEGIN GENERATED DENY-LIST -->
+- Environment files: `*.env`, `*.env.*`, `*.envrc*`.
+- Credential and config files: `*.npmrc`, `*.pypirc`, `*.netrc`, `*.git-credentials`, `*credentials*.json`, `*secrets.*`, `*.pgpass`, `*.htpasswd`, `*.docker/config.json`, `*.kube/config`, `*.aws/credentials`, `*.m2/settings.xml`, `*.dockercfg`, `*_netrc`, `*.cargo/credentials*`, `*.gem/credentials`.
+- Private keys and certificates: `*id_rsa*`, `*id_dsa*`, `*id_ecdsa*`, `*id_ed25519*`, `*.ppk`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.pem`, `*.key`, `*.asc`, `*.gpg`.
+- Terraform material: `*.tfstate*`.
+- Vault material: `*.vault-token`, `*.vault_pass`, `*vault-password*`, `*vault_password*`.
+- Kerberos material: `*.keytab`.
+- Apple keys: `*.p8`.
+- Yarnrc auth: `*.yarnrc*`.
+- Lockfiles: `*.lock`, `*package-lock.json`, `*npm-shrinkwrap.json`, `*pnpm-lock.yaml`, `*bun.lockb`.
+- Minified assets: `*.min.js`, `*.min.css`, `*.map`.
+<!-- END GENERATED DENY-LIST -->
+
+The exclude list deliberately errs on the safe side: a legitimate file whose name matches an
+exclude pattern (e.g. `*secrets.*`) is kept out of the payload — that is intentional. `.git` history and
+hook files are not part of the payload, and the API key is never exposed in `ps` output.
+The list above is generated from [secret-excludes.registry](secret-excludes.registry); edit the
+registry and run `make generate-excludes`, never the generated block.
 
 ## Development
 
@@ -128,8 +135,9 @@ The [Makefile](Makefile) is the single source of truth for the install and verif
 commands. Run every local gate with:
 
 ```sh
-make test      # syntax checks, version check, both suites, checksum verification
-make help      # all targets (install, uninstall, checksums, ...)
+make test               # syntax, generated-block drift, version, suites, checksums
+make generate-excludes  # regenerate the four deny-list copies from the registry
+make help               # all targets (install, uninstall, checksums, ...)
 ```
 
 From a checkout, `make install` runs the installer (global by default); pass

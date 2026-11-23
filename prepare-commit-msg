@@ -18,10 +18,18 @@ for _loc in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8; do
   fi
 done
 
-MODEL="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
+# Canonical defaults. Env expansion and fallback validation both reference these so a
+# default cannot drift between the two paths. The observable values are pinned by the
+# suite: model and timeout in curl's argv, the token budget in the truncation note.
+DEFAULT_MODEL='gemini-3.5-flash-lite'
+DEFAULT_MAX_INPUT_TOKENS=8000
+DEFAULT_TIMEOUT=20
+DETAIL_TEXT_MINIMAL='Minimal:  Subject line + single paragraph of technical reasoning.'
+
+MODEL="${GEMINI_MODEL:-$DEFAULT_MODEL}"
 MAX_DIFF_CHARS="${GEMINI_MAX_DIFF_CHARS:-}"
-MAX_INPUT_TOKENS="${GEMINI_MAX_INPUT_TOKENS:-8000}"
-TIMEOUT="${GEMINI_TIMEOUT:-20}"
+MAX_INPUT_TOKENS="${GEMINI_MAX_INPUT_TOKENS:-$DEFAULT_MAX_INPUT_TOKENS}"
+TIMEOUT="${GEMINI_TIMEOUT:-$DEFAULT_TIMEOUT}"
 # Body wrap width used by the post-processing pipeline below; the prompt asks for 82.
 BODY_WRAP_WIDTH=82
 # Soft target for the subject line in the prompt. Not a hard cap: the prompt must
@@ -61,7 +69,7 @@ validate_uint() {  # <value> <max_digits> <fallback> -> validated decimal on std
 CHARS_PER_TOKEN=3              # heuristic, not tokenizer-measured
 PROMPT_OVERHEAD_CHARS=6000     # heuristic cushion, not measured
 
-MAX_INPUT_TOKENS="$(validate_uint "$MAX_INPUT_TOKENS" 9 8000)"
+MAX_INPUT_TOKENS="$(validate_uint "$MAX_INPUT_TOKENS" 9 "$DEFAULT_MAX_INPUT_TOKENS")"
 
 TOKEN_DERIVED_CHARS=$((MAX_INPUT_TOKENS * CHARS_PER_TOKEN - PROMPT_OVERHEAD_CHARS))
 # A tiny budget would leave no room for a diff at all; floor it so a misconfigured
@@ -76,18 +84,18 @@ fi
 # The token budget is a hard ceiling: an explicitly larger char cap is clamped to it
 # so a stale GEMINI_MAX_DIFF_CHARS cannot silently push the request past the tier quota.
 [ "$MAX_DIFF_CHARS" -gt "$TOKEN_DERIVED_CHARS" ] && MAX_DIFF_CHARS=$TOKEN_DERIVED_CHARS
-TIMEOUT="$(validate_uint "$TIMEOUT" 2 20)"
+TIMEOUT="$(validate_uint "$TIMEOUT" 2 "$DEFAULT_TIMEOUT")"
 
 warn() { printf 'hoosky: %s\n' "$*" >&2; }
 DETAIL="${GEMINI_DETAIL_LEVEL:-minimal}"
 case "$DETAIL" in
-  [Mm][Ii][Nn][Ii][Mm][Aa][Ll])     DETAIL=minimal;  DETAIL_TEXT='Minimal:  Subject line + single paragraph of technical reasoning.' ;;
+  [Mm][Ii][Nn][Ii][Mm][Aa][Ll])     DETAIL=minimal;  DETAIL_TEXT="$DETAIL_TEXT_MINIMAL" ;;
   [Ss][Tt][Aa][Nn][Dd][Aa][Rr][Dd]) DETAIL=standard; DETAIL_TEXT='Standard: Multi-paragraph technical justification: problem and solution.' ;;
   [Dd][Ee][Tt][Aa][Ii][Ll][Ee][Dd]) DETAIL=detailed; DETAIL_TEXT='Detailed: Exhaustive docs: before/after state, logic flow, architectural implications.' ;;
   *) warn "GEMINI_DETAIL_LEVEL '$DETAIL' is not one of minimal|standard|detailed; using minimal"
-     DETAIL=minimal; DETAIL_TEXT='Minimal:  Subject line + single paragraph of technical reasoning.' ;;
+     DETAIL=minimal; DETAIL_TEXT="$DETAIL_TEXT_MINIMAL" ;;
 esac
-case "$MODEL" in ''|*[!A-Za-z0-9._-]*) warn "GEMINI_MODEL '$MODEL' is not a valid model id; using 'gemini-3.5-flash-lite'"; MODEL="gemini-3.5-flash-lite" ;; esac
+case "$MODEL" in ''|*[!A-Za-z0-9._-]*) warn "GEMINI_MODEL '$MODEL' is not a valid model id; using '$DEFAULT_MODEL'"; MODEL="$DEFAULT_MODEL" ;; esac
 API_URL="https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent"
 
 # Greedily re-wrap stdin to <width> columns; blank lines delimit paragraphs.

@@ -23,8 +23,8 @@ help:  ## list targets
 	@printf '  make test                  run every local gate\n'
 	@printf '  make generate-excludes     regenerate deny-list copies from secret-excludes.registry\n'
 	@printf '  make checksums             regenerate checksums.txt after a hook/installer edit\n'
-	@printf '  make install [ARGS="..."] run install.sh (global by default)\n'
-	@printf '  make uninstall             run install.sh --uninstall\n'
+	@printf '  make install [ARGS]        run install.sh (global by default)\n'
+	@printf '  make uninstall [ARGS]      run install.sh --uninstall (e.g. ARGS="--dir PATH")\n'
 	@printf '  make help                  this text\n'
 
 check-syntax:  ## bash -n on all shell scripts
@@ -68,5 +68,5 @@ checksums:  ## regenerate the published checksums
 install:  ## run the installer; pass ARGS="--dir PATH" etc. for narrower scopes
 	bash $(INSTALLER) $(ARGS)
 
-uninstall:  ## run the installer's uninstall path
+uninstall:  ## run the installer's uninstall path; pass ARGS="--dir PATH" etc.
 	bash $(INSTALLER) --uninstall $(ARGS)

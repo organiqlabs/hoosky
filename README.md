@@ -10,7 +10,7 @@ back to the normal empty message. (Sole exception: Ctrl-C/kill aborts the commit
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.1/install.sh | bash
 ```
 
 That installs the `prepare-commit-msg` hook into your **global git hooks directory** —
@@ -38,7 +38,7 @@ Prefer no curl-pipe? The manual equivalent:
 mkdir -p "$HOME/.config/git/hooks"
 [ -n "$(git config --global core.hooksPath)" ] || git config --global core.hooksPath "$HOME/.config/git/hooks"
 curl -fsSL -o "$(git config --global core.hooksPath)/prepare-commit-msg" \
-  https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.0/prepare-commit-msg
+  https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.1/prepare-commit-msg
 chmod 0755 "$(git config --global core.hooksPath)/prepare-commit-msg"
 ```
 
@@ -135,9 +135,10 @@ The [Makefile](Makefile) is the single source of truth for the install and verif
 commands. Run every local gate with:
 
 ```sh
-make test               # syntax, generated-block drift, version, suites, checksums
-make generate-excludes  # regenerate the four deny-list copies from the registry
-make help               # all targets (install, uninstall, checksums, ...)
+make test                  # syntax, generated-block drift, version, suites, checksums
+make generate-excludes     # regenerate the four deny-list copies from the registry
+make check-installed-hook  # dogfooding: does the installed hook match checksums.txt?
+make help                  # all targets (install, uninstall, checksums, ...)
 ```
 
 From a checkout, `make install` runs the installer (global by default); pass

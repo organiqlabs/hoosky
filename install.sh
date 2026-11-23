@@ -10,7 +10,7 @@ ORG_REPO="organiqlabs/hoosky"
 # Single source of truth for the release version. The installer runs via `curl | bash`,
 # so the tag must be embedded here (it cannot read a sibling VERSION file). Bump this and
 # run `bash check-version.sh`; see RELEASING.md for the full release procedure.
-TAG="v1.0.0"
+TAG="v1.0.1"
 RAW="https://raw.githubusercontent.com/${ORG_REPO}/${TAG}"
 HOOK_NAME="prepare-commit-msg"
 

@@ -16,7 +16,7 @@ REGISTRY     := secret-excludes.registry
 # shasum -a 256 is the macOS/BSD fallback; both emit "<hash>  <file>".
 SHA256       := $(shell if command -v sha256sum >/dev/null 2>&1; then printf sha256sum; else printf 'shasum -a 256'; fi)
 
-.PHONY: help check-syntax check-generated generate-excludes check-version check-version-test check-hook check-install check-checksums test checksums install uninstall
+.PHONY: help check-syntax check-generated generate-excludes check-version check-version-test check-hook check-install check-checksums check-installed-hook test checksums install uninstall
 
 help:  ## list targets
 	@printf 'hoosky targets (single source of truth for install/test):\n'
@@ -25,6 +25,7 @@ help:  ## list targets
 	@printf '  make checksums             regenerate checksums.txt after a hook/installer edit\n'
 	@printf '  make install [ARGS]        run install.sh (global by default)\n'
 	@printf '  make uninstall [ARGS]      run install.sh --uninstall (e.g. ARGS="--dir PATH")\n'
+	@printf '  make check-installed-hook  verify the installed hook matches checksums.txt\n'
 	@printf '  make help                  this text\n'
 
 check-syntax:  ## bash -n on all shell scripts
@@ -56,6 +57,22 @@ check-install:  ## installer suite (stubs curl; sandboxed HOME/gitconfig)
 
 check-checksums:  ## published hashes match the working-tree hook and installer
 	$(SHA256) $(HOOK) $(INSTALLER) | diff - $(CHECKSUMS)
+
+# Dogfooding drift guard. Environment-dependent on purpose, so it stays out of
+# `make test`: a fresh checkout with no installed hook must still have a reproducible
+# suite. It compares the hooksPath-resolved copy against the *published* checksum,
+# which is what install.sh verifies and what a fresh user would receive.
+INSTALLED_HOOK := $(shell git rev-parse --git-path hooks)/prepare-commit-msg
+check-installed-hook:  ## installed hook matches the published checksum
+	@[ -f "$(INSTALLED_HOOK)" ] || { printf 'check-installed-hook: no hook at %s\n' "$(INSTALLED_HOOK)" >&2; exit 1; }
+	@want="$$(awk '$$2 == "$(HOOK)" { print $$1 }' $(CHECKSUMS))"; \
+	got="$$($(SHA256) "$(INSTALLED_HOOK)" | awk '{ print $$1 }')"; \
+	if [ "$$want" = "$$got" ]; then \
+	  printf 'check-installed-hook: installed hook matches published checksum\n'; \
+	else \
+	  printf 'check-installed-hook: STALE installed hook (want %s, got %s)\n' "$$want" "$$got" >&2; \
+	  exit 1; \
+	fi
 
 # Generated blocks and checksums first: a stale block or checksum makes later
 # cases fail with confusing "refusing to install"/stale-string symptoms instead

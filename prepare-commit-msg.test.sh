@@ -568,58 +568,27 @@ rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY="$key" PATH="$STUB_BIN:/usr/bin:/bin" 
 if [ "$rc" = 0 ] && ! grep -qF "$key" "$r/argv.txt" && grep -qF "x-goog-api-key: $key" "$r/stdin.txt" && grep -q -- '-K' "$r/argv.txt"; then
   ok "api key travels via stdin config only"; else bad "api key travels via stdin config only (rc=$rc)"; fi
 
-# 21. The simplified hook no longer truncates the subject or re-wraps the body: the
-# response is written through verbatim after control-char/fence stripping.
+# 21. Single regression tripwire for the two retired knobs: GEMINI_MAX_SUBJECT_CHARS and
+# GEMINI_BODY_WRAP_CHARS are no longer consulted. A hostile 10/20 request must leave the
+# long subject uncut and the body wrapped by the hook's fixed 82-column pipeline.
 cat > "$ROOT/longsubj.json" <<'JSON'
 {"candidates":[{"content":{"parts":[{"text":"feat(scripts): this subject line is deliberately far too long to fit within fifty characters\n\nThis body sentence is deliberately written to be far longer than seventy-five characters so the hook has to wrap it across multiple lines before writing the message file."}]}}]}
 JSON
 r=$(make_repo longsubj); m=$(fresh_msg "$r")
-rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/longsubj.json")
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/longsubj.json" GEMINI_MAX_SUBJECT_CHARS=10 GEMINI_BODY_WRAP_CHARS=20)
 subject=$(head -1 "$m")
 expected_subj='feat(scripts): this subject line is deliberately far too long to fit within fifty characters'
-if [ "$rc" = 0 ] && [ "$subject" = "$expected_subj" ] \
-  && grep -q 'This body sentence is deliberately written' "$m" \
-  && ! grep -q 'subject exceeds' "$ROOT/stderr"; then
-  ok "long subject/body passed through unchanged"; else bad "long subject/body pass-through (rc=$rc, subj='$subject')"; fi
-
-# 22. GEMINI_MAX_SUBJECT_CHARS is no longer consulted; a 10-char request cannot cut the subject.
-r=$(make_repo subj10); m=$(fresh_msg "$r")
-rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/longsubj.json" GEMINI_MAX_SUBJECT_CHARS=10)
-subject=$(head -1 "$m")
-if [ "$rc" = 0 ] && [ "$subject" = "$expected_subj" ] && [ "${#subject}" -gt 10 ]; then
-  ok "MAX_SUBJECT_CHARS ignored (pass-through)"; else bad "MAX_SUBJECT_CHARS ignored (rc=$rc, subj=${#subject})"; fi
-
-# 23. GEMINI_BODY_WRAP_CHARS is likewise ignored: the long body stays on one line.
-cat > "$ROOT/wrapped.json" <<'JSON'
-{"candidates":[{"content":{"parts":[{"text":"feat(x): short subject\n\nalpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon physicist"}]}}]}
-JSON
-r=$(make_repo wrap20); m=$(fresh_msg "$r")
-rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/wrapped.json" GEMINI_BODY_WRAP_CHARS=20)
 max_body=0
 while IFS= read -r line; do
   case "$line" in \#*|'') continue ;; esac
   [ "${#line}" -gt "$max_body" ] && max_body="${#line}"
 done < <(tail -n +2 "$m")
-if [ "$rc" = 0 ] && [ "$max_body" -gt 20 ]; then
-  ok "BODY_WRAP_CHARS ignored (pass-through)"; else bad "BODY_WRAP_CHARS ignored (rc=$rc, body_max=$max_body)"; fi
-
-# 24. Invalid subject/body knobs are ignored rather than triggering numeric errors.
-subj_fb=1
-for v in abc 0 00 0000 99999 1000; do
-  r=$(make_repo "badsubj-$v"); m=$(fresh_msg "$r")
-  rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/longsubj.json" GEMINI_MAX_SUBJECT_CHARS="$v")
-  s=$(head -1 "$m")
-  { [ "$rc" = 0 ] && [ "$s" = "$expected_subj" ] && ! grep -q 'integer expression' "$ROOT/stderr"; } || subj_fb=0
-done
-if [ "$subj_fb" = 1 ]; then ok "invalid MAX_SUBJECT_CHARS ignored safely"; else bad "invalid MAX_SUBJECT_CHARS ignored safely"; fi
-wrap_fb=1
-for v in abc 0 00 0000 99999 1000; do
-  r=$(make_repo "badwrap-$v"); m=$(fresh_msg "$r")
-  rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/longsubj.json" GEMINI_BODY_WRAP_CHARS="$v")
-  s=$(head -1 "$m")
-  { [ "$rc" = 0 ] && [ "$s" = "$expected_subj" ] && ! grep -q 'integer expression' "$ROOT/stderr"; } || wrap_fb=0
-done
-if [ "$wrap_fb" = 1 ]; then ok "invalid BODY_WRAP_CHARS ignored safely"; else bad "invalid BODY_WRAP_CHARS ignored safely"; fi
+if [ "$rc" = 0 ] && [ "$subject" = "$expected_subj" ] \
+  && [ "$max_body" -gt 20 ] && [ "$max_body" -le 82 ] \
+  && grep -q 'This body sentence is deliberately written' "$m" \
+  && ! grep -q 'integer expression' "$ROOT/stderr"; then
+  ok "retired subject/body knobs ignored; fixed 82-col wrap intact"
+else bad "retired subject/body knobs ignored (rc=$rc, subj='$subject', body_max=$max_body)"; fi
 
 # 25. Zero-bypass regression: 00-style values fall back to the defaults (argv-verified)
 r=$(make_repo zeros1); m=$(fresh_msg "$r")
@@ -628,12 +597,6 @@ if [ "$rc" = 0 ] && grep -A1 -- '--max-time' "$r/argv.txt" | tail -1 | grep -qx 
   && grep -A1 -- '--max-filesize' "$r/argv.txt" | tail -1 | grep -qx '10485760' \
   && head -1 "$m" | grep -q '^feat('; then
   ok "TIMEOUT=00 / MAX_DIFF_CHARS=00 fall back to defaults"; else bad "TIMEOUT=00 / MAX_DIFF_CHARS=00 fall back to defaults (rc=$rc)"; fi
-r=$(make_repo zeros2); m=$(fresh_msg "$r")
-rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" GEMINI_MAX_SUBJECT_CHARS=00 GEMINI_BODY_WRAP_CHARS=00)
-s=$(head -1 "$m")
-if [ "$rc" = 0 ] && [ -n "$s" ] && [ "${s#feat}" != "$s" ] \
-  && ! grep -q 'integer expression' "$ROOT/stderr"; then
-  ok "MAX_SUBJECT_CHARS=00 / BODY_WRAP_CHARS=00 ignored safely"; else bad "MAX_SUBJECT_CHARS=00 / BODY_WRAP_CHARS=00 ignored (rc=$rc)"; fi
 
 # 26. --no-ext-diff --no-textconv: repo-local diff drivers cannot rewrite the payload.
 # The injected driver sentinels would appear in the captured request if either flag
@@ -930,14 +893,14 @@ if [ "$rc" = 0 ] && grep -A1 -- '--max-time' "$r/argv.txt" | tail -1 | grep -qx 
   ok "unset knobs: --max-time 20"
 else bad "unset knobs default (rc=$rc)"; fi
 
-# 42. With no client-side wrap, both body lines are written through verbatim.
+# 42. Short body lines survive the fixed 82-column wrap_text pipeline verbatim.
 cat > "$ROOT/wrap-edge.json" <<'JSON'
 {"candidates":[{"content":{"parts":[{"text":"feat(x): wrap edge\n\naaaaaaaaaa bbbbbbbbb\n\naaaaaaaaaa cccccccccc"}]}}]}
 JSON
 r=$(make_repo wrapedge); m=$(fresh_msg "$r")
-rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/wrap-edge.json" GEMINI_BODY_WRAP_CHARS=20)
+rc=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" STUB_RESPONSE_FILE="$ROOT/wrap-edge.json")
 if [ "$rc" = 0 ] && grep -qx 'aaaaaaaaaa bbbbbbbbb' "$m" && grep -qx 'aaaaaaaaaa cccccccccc' "$m"; then
-  ok "wrap boundary: body passed through unwrapped"
+  ok "wrap boundary: short body lines kept verbatim"
 else bad "wrap boundary (rc=$rc)"; fi
 
 # 42b. The wrap_text helper is wired into the output pipeline: a long body is re-wrapped

@@ -2,9 +2,8 @@
 # check-version.sh cases. No network: each case builds a scratch dir, copies the
 # checker and installer into it, and runs the checker there. Prints
 # "all tests passed (N tests)" and exits 0, or "FAILURES (N tests)" and exits 1.
-# Fixture versions are assembled at runtime by ver(): this suite is a tracked
-# file, so a literal vX.Y.Z here would make `make check-version` fail at the
-# repo root (the checker scans every tracked file, this suite included).
+# Fixture versions are assembled at runtime by ver(): keeping literal release
+# numbers out of tracked test code avoids a bump every time TAG changes.
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -45,9 +44,8 @@ ver() {  # <major> <minor> <patch> -> vM.m.p without a literal version in this f
 
 WORK="$(mktemp -d)" || { printf 'check-version.test: mktemp failed\n' >&2; exit 1; }
 
-# 0. The suite must not carry a literal version token of its own: the checker
-# scans every tracked file, so one here turns `make check-version` red for a
-# reason that has nothing to do with the release docs.
+# 0. The suite must not carry a literal version token of its own: pinning a release
+# number in test code would need a bump every time TAG changes.
 TOTAL=$((TOTAL + 1))
 if grep -qE 'v[0-9]+\.[0-9]+\.[0-9]+' "$0"; then
   fail "0: suite contains a literal version token; build fixtures with ver() instead"
@@ -57,7 +55,7 @@ fi
 TOTAL=$((TOTAL + 1))
 V_MATCH="$(ver 9 9 9)"
 newcase matching
-printf 'See %s docs.\n' "$V_MATCH" > "$CASE/notes.md"
+printf 'See %s docs.\n' "$V_MATCH" > "$CASE/README.md"
 sed "s/^TAG=\"v[0-9.]*\"\$/TAG=\"$V_MATCH\"/" "$CASE/install.sh" > "$CASE/.tag" && mv "$CASE/.tag" "$CASE/install.sh"
 gitcase || fail "1: git setup"
 run
@@ -68,7 +66,7 @@ case "$OUTPUT" in *"match TAG=$V_MATCH"*) : ;; *) fail "1: missing success line:
 TOTAL=$((TOTAL + 1))
 V_BAD="$(ver 1 2 3)"
 newcase mismatch
-printf 'See %s docs.\n' "$V_BAD" > "$CASE/notes.md"
+printf 'See %s docs.\n' "$V_BAD" > "$CASE/README.md"
 gitcase || fail "2: git setup"
 run
 [ "$RC" -eq 1 ] || fail "2: expected rc 1, got $RC"
@@ -78,8 +76,8 @@ case "$ERR" in *"$V_BAD"*) : ;; *) fail "2: stderr did not name $V_BAD: $ERR" ;;
 TOTAL=$((TOTAL + 1))
 V_IGN="$(ver 8 8 8)"
 newcase ignored
-printf 'notes.md\n' > "$CASE/.gitignore"
-printf 'scratch %s\n' "$V_IGN" > "$CASE/notes.md"
+printf 'README.md\n' > "$CASE/.gitignore"
+printf 'scratch %s\n' "$V_IGN" > "$CASE/README.md"
 gitcase || fail "3: git setup"
 run
 [ "$RC" -eq 0 ] || fail "3: ignored file failed the gate: rc=$RC ($ERR)"
@@ -101,6 +99,20 @@ git -C "$CASE" add .keep
 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$CASE" -c user.email=t@t -c user.name=t commit -qm init || fail "5: git setup"
 run
 [ "$RC" -eq 1 ] || fail "5: expected rc 1 with nothing tracked, got $RC ($OUTPUT)"
+
+# 6. An unrelated tracked doc may quote a historical version without blocking a bump:
+# only the release-bearing allowlist is scanned (T039).
+TOTAL=$((TOTAL + 1))
+V_BUMP="$(ver 4 4 4)"
+V_OLD="$(ver 2 0 0)"
+newcase unrelated
+printf 'See %s docs.\n' "$V_BUMP" > "$CASE/README.md"
+printf '## History\n\n- %s: first release\n' "$V_OLD" > "$CASE/CHANGELOG.md"
+sed "s/^TAG=\"v[0-9.]*\"\$/TAG=\"$V_BUMP\"/" "$CASE/install.sh" > "$CASE/.tag" && mv "$CASE/.tag" "$CASE/install.sh"
+gitcase || fail "6: git setup"
+run
+[ "$RC" -eq 0 ] || fail "6: unrelated CHANGELOG blocked the release: rc=$RC ($ERR)"
+case "$OUTPUT" in *"match TAG=$V_BUMP"*) : ;; *) fail "6: missing success line: $OUTPUT" ;; esac
 
 if [ "$FAILED" -ne 0 ]; then
   printf 'FAILURES (%s tests)\n' "$TOTAL"

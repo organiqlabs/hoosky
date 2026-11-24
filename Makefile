@@ -43,7 +43,7 @@ check-generated:  ## generated deny-list blocks match the registry
 generate-excludes:  ## regenerate the four deny-list copies from the registry
 	bash $(GENERATOR)
 
-check-version:  ## every vX.Y.Z reference matches install.sh TAG
+check-version:  ## release-bearing vX.Y.Z references (install.sh, README.md) match TAG
 	bash $(VERSION_CHK)
 
 check-version-test:  ## checker suite (scratch git repos; no network)

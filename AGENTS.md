@@ -14,7 +14,8 @@ shipped. Git repo, branch `main`; no CI or build beyond the Makefile. Don't inve
 toolchain commands. This repo is published as `organiqlabs/hoosky` — `install.sh`
 downloads the release tag defined by `TAG` in `install.sh`, not the worktree. See
 `RELEASING.md` for the release procedure; `TAG` is the single source of truth and
-`make check-version` verifies docs match it.
+`make check-version` verifies the release-bearing files (`install.sh`, `README.md`) match it.
+Unrelated docs may quote historical versions without blocking a bump.
 
 ## Identity
 

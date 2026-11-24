@@ -11,17 +11,20 @@ if [ -z "$tag" ]; then
   exit 1
 fi
 
-# Scan tracked files for literal vX.Y.Z tokens, so the check also works while a
-# release is being staged. Restricting to tracked files keeps .gitignored local
-# state (.specify/, specs/pomona/) and untracked scratch files from failing the
-# gate; a doc only matters once it is added. This script contains only the regex,
-# never a literal version, so it cannot flag itself.
+# Scan only the release-bearing files. install.sh owns TAG; README.md carries the
+# two published install URLs. Unrelated tracked docs may quote historical versions
+# (CHANGELOGs, migration notes, examples) without blocking a bump — an allowlist
+# scales better than an exemption list, which would need editing for every new doc.
+# Restricting to tracked files keeps .gitignored local state (.specify/,
+# specs/pomona/) and untracked scratch files out of the gate. This script contains
+# only the regex, never a literal version, so it cannot flag itself.
+RELEASE_FILES=(install.sh README.md)
 #
 # No version reference at all means the scan did not run, not that the tree is
-# clean: install.sh's TAG line is itself tracked, so a successful scan always
-# matches at least once. Fail instead of reporting a vacuous pass (a source
-# archive has no .git, and `git grep` exits 128 there).
-matches="$(git grep -IhoE 'v[0-9]+\.[0-9]+\.[0-9]+')"
+# clean: install.sh's TAG line is tracked, so a successful scan always matches at
+# least once. Fail instead of reporting a vacuous pass (a source archive has no
+# .git, and `git grep` exits 128 there).
+matches="$(git grep -IhoE 'v[0-9]+\.[0-9]+\.[0-9]+' -- "${RELEASE_FILES[@]}")"
 grc=$?
 if [ "$grc" -ne 0 ] && [ "$grc" -ne 1 ]; then                 # 128 = no work tree; 1 = no matches
   printf 'check-version: could not scan tracked files; run this from a git clone (git grep exited %s)\n' "$grc" >&2
@@ -40,6 +43,6 @@ if [ "$versions" = "$tag" ]; then
   exit 0
 fi
 
-printf 'check-version: TAG=%s but the tree also references:\n%s\n' "$tag" "$versions" >&2
-printf 'update README.md (and any other vX.Y.Z reference) to match; see RELEASING.md\n' >&2
+printf 'check-version: TAG=%s but these release-bearing files disagree:\n%s\n' "$tag" "$versions" >&2
+printf 'update %s to match; see RELEASING.md\n' "${RELEASE_FILES[*]}" >&2
 exit 1

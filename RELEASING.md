@@ -10,9 +10,11 @@ and must be run by hand. Skipping a step ships an installer that refuses its own
 because the documented install path is `curl … | bash` — there is no sibling file to read.
 The `usage()` examples interpolate `${TAG}`, so they follow a bump automatically.
 
-Every other literal `vX.Y.Z` in the tree (currently the two GitHub URLs in `README.md`)
-must be kept in sync manually. `make check-version` fails if any tracked file disagrees
-with `TAG`. `AGENTS.md` deliberately names no version, so it never needs a bump.
+The other release-bearing file is `README.md`, whose two GitHub URLs must be kept in sync
+manually. `make check-version` scans exactly `install.sh` and `README.md` (the allowlist in
+`check-version.sh`); it fails if either disagrees with `TAG`. Unrelated tracked docs may
+quote historical versions without blocking a bump, so no exemption edits are needed when
+new docs are added. `AGENTS.md` deliberately names no version.
 
 ## Preflight
 

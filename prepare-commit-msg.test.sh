@@ -688,8 +688,9 @@ if [ "$rc" = 0 ] && ! LC_ALL=C grep -q $'\x1b' "$m" && ! LC_ALL=C grep -q $'\x07
 else bad "C0 control chars stripped; tabs expanded to spaces (rc=$rc)"; fi
 
 # 31. GEMINI_DETAIL_LEVEL: valid tiers are accepted silently; a bogus value warns and
-# falls back. The condensed prompt no longer echoes the tier, so verify normalization
-# via stderr and that every tier still leaves the response untouched.
+# falls back. The rendered request echoes the normalized tier in its
+# "Required detail level (tier):" line, so pin that directly in the captured prompts;
+# stderr carries the bogus-value fallback. Every tier leaves the response untouched.
 d="$ROOT/detail-check"; rm -rf "$d"; mkdir -p "$d"
 r=$(make_repo detail-default); m=$(fresh_msg "$r")
 rc_d=$(run_hook "$r" "$m" "" GEMINI_API_KEY=fake PATH="$STUB_BIN:/usr/bin:/bin" CAPTURE_FILE="$d/default.json")
@@ -719,6 +720,12 @@ grep -q 'not one of minimal' "$d/err-bogus.txt"                                 
 ! grep -q 'hoosky:' "$d/err-standard.txt"                                     || dc=1
 ! grep -q 'hoosky:' "$d/err-detailed.txt"                                     || dc=1
 grep -q 'hoosky: GEMINI_DETAIL_LEVEL' "$d/err-bogus.txt"                       || dc=1
+# The normalized tier is spliced into the rendered request. Pin it so nobody removes
+# that live prompt line as if it were dead text.
+grep -qF 'Required detail level (minimal):' "$d/default.json"                    || dc=1
+grep -qF 'Required detail level (standard):' "$d/standard.json"                  || dc=1
+grep -qF 'Required detail level (detailed):' "$d/detailed.json"                  || dc=1
+grep -qF 'Required detail level (minimal):' "$d/bogus.json"                      || dc=1
 if [ "$dc" = 0 ]; then ok "GEMINI_DETAIL_LEVEL normalizes the tier without blocking the draft"; else bad "GEMINI_DETAIL_LEVEL tier selection (dc=$dc)"; fi
 
 # 31b. T025: the prompt header must not impose an unconditional "single paragraph"

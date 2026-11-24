@@ -145,7 +145,13 @@ From a checkout, `make install` runs the installer (global by default); pass
 `make install ARGS="--dir PATH"` for a narrower scope. The plain `curl … | bash` command
 above remains the way to install without a checkout.
 
-Deps: `bash`, `git`, `jq`, `grep`, `make` (curl at runtime; plus required standard userland — `tr`/`sed`/`wc`/`tail`/`head`/`dirname`/`cat`/`mktemp`/`mv`/`chmod`/`rm`; unguarded tools degrade silently). The diff-stat cap uses `tail -c` and `dd` (POSIX) plus `od`/`wc`/`tr`, so it works on BSD/macOS without coreutils. No build, no CI, no manifest beyond the Makefile.
+Deps: `bash`. The installer needs `curl`, `git`, `awk`, `sed`, `sort`, `find`, and
+`sha256sum` (or `shasum` on BSD/macOS) — checked up front, exit 1 if missing — plus
+`mktemp`, `mkdir`, `cp`, `chmod` and `mv` (unchecked; the install fails without them).
+The hook guards `curl`/`jq`/`git`/`grep`/`sed`/`tr`/`dirname`/`tail`/`cat` (warn + exit 0);
+its other userland (`wc`/`head`/`mktemp`/`mv`/`chmod`/`rm`/`dd`/`od`) degrades silently.
+The diff-stat cap uses POSIX `dd`/`od`, so it works on BSD/macOS without coreutils.
+`make test` adds `make`, `awk` and `sort`. No build, no CI, no manifest beyond the Makefile.
 
 Release procedure (bumping the tag, checksums, and docs): [RELEASING.md](RELEASING.md). `TAG` in `install.sh` is the single source of truth for the version.
 Repo conventions for agents: [AGENTS.md](AGENTS.md).

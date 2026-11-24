@@ -112,9 +112,13 @@ downloads the release tag defined by `TAG` in `install.sh`, not the worktree. Se
   `make generate-excludes` rewrites all four and `make check-generated` (part of `make test`)
   fails on a stale block. Never hand-edit a generated block. The hook stays self-contained,
   so the release has no runtime dependency on the registry.
-- Deps: `bash`, `git`, `jq`, `grep`, `make` (curl at runtime; plus required standard userland:
-  `tr`, `sed`, `wc`, `tail`, `head`, `dirname`, `cat`, `mktemp`, `mv`, `chmod`, `rm` — the
-  unguarded ones degrade silently without blocking the commit).
+- Deps: `bash`. The installer needs `curl`, `git`, `awk`, `sed`, `sort`, `find`, and
+  `sha256sum` (or `shasum` on BSD/macOS) — checked up front, exit 1 if missing — plus
+  `mktemp`, `mkdir`, `cp`, `chmod` and `mv` (unchecked; install fails without them). The
+  hook guards `curl`/`jq`/`git`/`grep`/`sed`/`tr`/`dirname`/`tail`/`cat` (warn + exit 0);
+  its other userland (`wc`/`head`/`mktemp`/`mv`/`chmod`/`rm`/`dd`/`od`) degrades silently
+  without blocking the commit. `make test` adds `make`, `awk` and `sort`; the diff-stat cap
+  relies on POSIX `dd`/`od`.
 - `make test` runs `bash -n` on the hook, installer and checker scripts, `check-version.sh`
   and its own suite, the hook and installer suites, and a checksum recompute/diff.
   `check-version.test.sh` builds scratch git repos (no network) and asserts the checker

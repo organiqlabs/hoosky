@@ -86,7 +86,7 @@ fi
 [ "$MAX_DIFF_CHARS" -gt "$TOKEN_DERIVED_CHARS" ] && MAX_DIFF_CHARS=$TOKEN_DERIVED_CHARS
 TIMEOUT="$(validate_uint "$TIMEOUT" 2 "$DEFAULT_TIMEOUT")"
 
-warn() { printf 'hoosky: %s\n' "$*" >&2; }
+warn() { printf 'quad: %s\n' "$*" >&2; }
 DETAIL="${GEMINI_DETAIL_LEVEL:-minimal}"
 case "$DETAIL" in
   [Mm][Ii][Nn][Ii][Mm][Aa][Ll])     DETAIL=minimal;  DETAIL_TEXT="$DETAIL_TEXT_MINIMAL" ;;

@@ -1,4 +1,4 @@
-# hoosky
+# quad
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -10,7 +10,7 @@ back to the normal empty message. (Sole exception: Ctrl-C/kill aborts the commit
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/organiqlabs/quad/v1.0.2/install.sh | bash
 ```
 
 That installs the `prepare-commit-msg` hook into your **global git hooks directory** —
@@ -38,14 +38,14 @@ Prefer no curl-pipe? The manual equivalent:
 mkdir -p "$HOME/.config/git/hooks"
 [ -n "$(git config --global core.hooksPath)" ] || git config --global core.hooksPath "$HOME/.config/git/hooks"
 curl -fsSL -o "$(git config --global core.hooksPath)/prepare-commit-msg" \
-  https://raw.githubusercontent.com/organiqlabs/hoosky/v1.0.1/prepare-commit-msg
+  https://raw.githubusercontent.com/organiqlabs/quad/v1.0.2/prepare-commit-msg
 chmod 0755 "$(git config --global core.hooksPath)/prepare-commit-msg"
 ```
 
 Per-repo instead of global? Swap `$(git config --global core.hooksPath)` for
 `$(git rev-parse --git-path hooks)` and skip the config line. To go back,
 `git config --global --unset core.hooksPath` restores per-repo hooks. `--uninstall` does
-that automatically when hoosky set the path and no other hooks share the directory; it
+that automatically when quad set the path and no other hooks share the directory; it
 never removes a `core.hooksPath` you configured yourself.
 
 The default/global install resolves `~/...` and the XDG config dir from `HOME`; if `HOME`

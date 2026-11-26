@@ -1,4 +1,4 @@
-# hoosky — single source of truth for the install and verification commands.
+# quad — single source of truth for the install and verification commands.
 # Docs point here instead of repeating shell invocations; `make help` lists targets.
 # There is no build or CI: these are the local gates for contributors and releases.
 
@@ -19,7 +19,7 @@ SHA256       := $(shell if command -v sha256sum >/dev/null 2>&1; then printf sha
 .PHONY: help check-syntax check-generated generate-excludes check-version check-version-test check-hook check-install check-checksums check-installed-hook test checksums install uninstall
 
 help:  ## list targets
-	@printf 'hoosky targets (single source of truth for install/test):\n'
+	@printf 'quad targets (single source of truth for install/test):\n'
 	@printf '  make test                  run every local gate\n'
 	@printf '  make generate-excludes     regenerate deny-list copies from secret-excludes.registry\n'
 	@printf '  make checksums             regenerate checksums.txt after a hook/installer edit\n'

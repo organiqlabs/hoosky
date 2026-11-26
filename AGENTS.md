@@ -11,7 +11,7 @@ tag at install time; regenerate after any edit to `prepare-commit-msg` or `insta
 with `make checksums`). Local quality findings live in the gitignored
 `specs/pomona/tasks.md` queue driven by `/speckit.pomona.cycle` — local state, not
 shipped. Git repo, branch `main`; no CI or build beyond the Makefile. Don't invent
-toolchain commands. This repo is published as `organiqlabs/hoosky` — `install.sh`
+toolchain commands. This repo is published as `organiqlabs/quad` — `install.sh`
 downloads the release tag defined by `TAG` in `install.sh`, not the worktree. See
 `RELEASING.md` for the release procedure; `TAG` is the single source of truth and
 `make check-version` verifies the release-bearing files (`install.sh`, `README.md`) match it.

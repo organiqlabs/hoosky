@@ -59,7 +59,7 @@ git_q() {
   env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$d/gitconfig" HOME="$d/home" git "$@"
 }
 config_get()  { env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$1/gitconfig" git config --global core.hooksPath 2>/dev/null; }
-managed_get() { env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$1/gitconfig" git config --global hoosky.hooksPathManaged 2>/dev/null; }
+managed_get() { env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$1/gitconfig" git config --global quad.hooksPathManaged 2>/dev/null; }
 
 # 1. Default, hooksPath unset: creates ~/.config/git/hooks, sets config, installs
 d="$(mk_env t1)"; out="$(run "$d" 2>"$d/err")"; rc=$?
@@ -129,10 +129,10 @@ else bad "checksum mismatch: refuses to install unverified code (rc=$rc)"; fi
 
 # 9. Unmanaged existing hook: refused without --force; --force backs up, then overwrites
 d="$(mk_env t9)"; mkdir -p "$d/home/.config/git/hooks"
-printf '#!/bin/sh\necho not-hoosky\n' > "$d/home/.config/git/hooks/prepare-commit-msg"; chmod +x "$d/home/.config/git/hooks/prepare-commit-msg"
+printf '#!/bin/sh\necho not-quad\n' > "$d/home/.config/git/hooks/prepare-commit-msg"; chmod +x "$d/home/.config/git/hooks/prepare-commit-msg"
 out="$(run "$d" 2>"$d/err")"; rc=$?
 refusal_ok=0
-[ $rc -eq 1 ] && grep -q not-hoosky "$d/home/.config/git/hooks/prepare-commit-msg" && [ -z "$(config_get "$d")" ] && refusal_ok=1
+[ $rc -eq 1 ] && grep -q not-quad "$d/home/.config/git/hooks/prepare-commit-msg" && [ -z "$(config_get "$d")" ] && refusal_ok=1
 out="$(run "$d" --force 2>"$d/err")"; rc=$?
 force_ok=0
 [ $rc -eq 0 ] && cmp -s "$REPO/prepare-commit-msg" "$d/home/.config/git/hooks/prepare-commit-msg" \
@@ -141,7 +141,7 @@ if [ "$refusal_ok" = 1 ] && [ "$force_ok" = 1 ]; then
   ok "unmanaged hook: refused without --force; --force backs up and overwrites"
 else bad "unmanaged hook: refused without --force (refusal=$refusal_ok) / --force backup+overwrite (force=$force_ok)"; fi
 
-# 9b. Older hoosky hook (checksum differs, hoosky signature intact): upgraded in place
+# 9b. Older quad hook (checksum differs, quad signature intact): upgraded in place
 # with a backup, without demanding --force
 d="$(mk_env t9b)"; mkdir -p "$d/home/.config/git/hooks"
 sed 's/gemini-3\.5-flash-lite/gemini-2.0-flash-lite/' "$REPO/prepare-commit-msg" \
@@ -150,18 +150,32 @@ out="$(run "$d" 2>"$d/err")"; rc=$?
 if [ $rc -eq 0 ] && cmp -s "$REPO/prepare-commit-msg" "$d/home/.config/git/hooks/prepare-commit-msg" \
    && ls "$d/home/.config/git/hooks/" | grep -q '^prepare-commit-msg\.bak\.' \
    && printf '%s' "$out" | grep -q 'upgrading'; then
-  ok "older hoosky hook: upgraded in place with backup, no --force needed"
-else bad "older hoosky hook: upgraded in place with backup, no --force needed (rc=$rc)"; fi
+  ok "older quad hook: upgraded in place with backup, no --force needed"
+else bad "older quad hook: upgraded in place with backup, no --force needed (rc=$rc)"; fi
 
-# 10. Uninstall: hook moved aside; the hooksPath hoosky set is removed so per-repo hooks work again
+# 10. Uninstall: hook moved aside; the hooksPath quad set is removed so per-repo hooks work again
 d="$(mk_env t10)"
 run "$d" >/dev/null 2>&1
 out="$(run "$d" --uninstall 2>"$d/err")"; rc=$?
 if [ $rc -eq 0 ] && ls "$d/home/.config/git/hooks/" | grep -q '^prepare-commit-msg\.uninstalled\.' \
-   && grep -q 'removed the global core.hooksPath hoosky set' "$d/err" \
+   && grep -q 'removed the global core.hooksPath quad set' "$d/err" \
    && [ -z "$(config_get "$d")" ] && [ -z "$(managed_get "$d")" ]; then
-  ok "--uninstall: hook moved aside; hoosky-owned global hooksPath removed"
-else bad "--uninstall: hook moved aside; hoosky-owned global hooksPath removed (rc=$rc)"; fi
+  ok "--uninstall: hook moved aside; quad-owned global hooksPath removed"
+else bad "--uninstall: hook moved aside; quad-owned global hooksPath removed (rc=$rc)"; fi
+
+# 10c. A pre-rebrand install recorded the legacy hoosky ownership key. Rewriting the
+# key to the old spelling must still let --uninstall clear the global hooksPath.
+d="$(mk_env t10c)"
+run "$d" >/dev/null 2>&1
+git_q "$d" config --global hoosky.hooksPathManaged "$(managed_get "$d")"
+git_q "$d" config --global --unset quad.hooksPathManaged
+out="$(run "$d" --uninstall 2>"$d/err")"; rc=$?
+if [ $rc -eq 0 ] && [ -z "$(config_get "$d")" ] \
+   && [ -z "$(managed_get "$d")" ] \
+   && [ -z "$(git_q "$d" config --global hoosky.hooksPathManaged 2>/dev/null)" ] \
+   && grep -q 'removed the global core.hooksPath' "$d/err"; then
+  ok "legacy hoosky ownership key: uninstall still clears global hooksPath"
+else bad "legacy hoosky ownership key: uninstall still clears global hooksPath (rc=$rc)"; fi
 
 # 10b. Uninstall never removes a hooksPath the user configured before installing
 d="$(mk_env t10b)"; mkdir -p "$d/myhooks"
@@ -185,7 +199,7 @@ else bad "--uninstall: shared hooks dir -> path kept with explanation (rc=$rc)";
 
 # 10d. Strictly POSIX find (no -quit): uninstall must still detect other hooks in the
 # shared dir and keep core.hooksPath. -quit is a GNU/BSD extension; a POSIX find rejects
-# it and emits nothing, which previously made hoosky think the dir was empty and silently
+# it and emits nothing, which previously made quad think the dir was empty and silently
 # disable every other hook in it.
 d="$(mk_env t10d)"
 run "$d" >/dev/null 2>&1
@@ -205,14 +219,14 @@ if [ $rc -eq 0 ] && [ "$(config_get "$d")" = "$d/home/.config/git/hooks" ] \
 else bad "--uninstall: POSIX find (no -quit) preserves other hooks (rc=$rc)"; fi
 
 # 12c. Uninstall checksum mismatch: the refusal must accurately say the installed
-# hook's checksum differs from the published TAG hook, not that it "is not the hoosky
-# hook" — it may be a genuine older hoosky hook whose checksum changed.
+# hook's checksum differs from the published TAG hook, not that it "is not the quad
+# hook" — it may be a genuine older quad hook whose checksum changed.
 d="$(mk_env t12c)"
 run "$d" >/dev/null 2>&1
 out="$(STUB_BAD_CHECKSUMS=1 run "$d" --uninstall 2>"$d/err")"; rc=$?
 if [ $rc -eq 1 ] \
    && grep -q 'checksum differs from the published' "$d/err" \
-   && ! grep -q 'not the hoosky hook' "$d/err"; then
+   && ! grep -q 'not the quad hook' "$d/err"; then
   ok "--uninstall checksum mismatch: accurate published-TAG message"
 else bad "--uninstall checksum mismatch: accurate published-TAG message (rc=$rc, err=$(cat "$d/err"))"; fi
 
@@ -237,7 +251,7 @@ if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q 'nothing to do' && [ -z "$(conf
   ok "--uninstall, nothing installed: exit 0, config not set"
 else bad "--uninstall, nothing installed: exit 0, config not set (rc=$rc)"; fi
 
-# 12b. --uninstall after the hook file was deleted by hand: the global state hoosky
+# 12b. --uninstall after the hook file was deleted by hand: the global state quad
 # set must still be undone (a missing file must not strand core.hooksPath).
 d="$(mk_env t12b)"
 run "$d" >/dev/null 2>&1
@@ -279,7 +293,7 @@ else bad "--all on missing root: exit 1 with message (rc=$rc)"; fi
 d="$(mk_env t16)"
 printf '#!/usr/bin/env bash\necho "stub cp: forced failure" >&2; exit 1\n' > "$d/bin/cp"; chmod +x "$d/bin/cp"
 out="$(run "$d" 2>"$d/err")"; rc=$?
-if [ $rc -eq 1 ] && ! printf '%s' "$out" | grep -q 'hoosky installed' && [ -z "$(config_get "$d")" ]; then
+if [ $rc -eq 1 ] && ! printf '%s' "$out" | grep -q 'quad installed' && [ -z "$(config_get "$d")" ]; then
   ok "copy failure: reported as failure, core.hooksPath not set"
 else bad "copy failure: reported as failure, core.hooksPath not set (rc=$rc)"; fi
 

@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
-# hoosky installer — fetches the prepare-commit-msg hook from the published tag
+# quad installer — fetches the prepare-commit-msg hook from the published tag
 # and installs it. Default: the global git hooks directory (setting
 # core.hooksPath globally when unset); --dir/--all target specific repos.
 # Not the hook itself: the hook drafts a Conventional Commits message with one
 # Gemini request.
 set -u
 
-ORG_REPO="organiqlabs/hoosky"
+ORG_REPO="organiqlabs/quad"
 # Single source of truth for the release version. The installer runs via `curl | bash`,
 # so the tag must be embedded here (it cannot read a sibling VERSION file). Bump this and
 # run `bash check-version.sh`; see RELEASING.md for the full release procedure.
-TAG="v1.0.1"
+TAG="v1.0.2"
 RAW="https://raw.githubusercontent.com/${ORG_REPO}/${TAG}"
 HOOK_NAME="prepare-commit-msg"
+# Ownership key for the global core.hooksPath. The legacy spelling is still read
+# so installations made before the rebrand can be upgraded/uninstalled cleanly.
+MANAGED_KEY="quad.hooksPathManaged"
+LEGACY_MANAGED_KEY="hoosky.hooksPathManaged"
 
-err()  { printf 'hoosky-install: %s\n' "$*" >&2; }
+err()  { printf 'quad-install: %s\n' "$*" >&2; }
 
 # HOME is needed to resolve ~/... in a global core.hooksPath and to compute the
 # default XDG config dir. Under `set -u` an unset HOME aborts with an opaque
@@ -30,7 +34,7 @@ require_home() {
 usage() {
   # Unquoted heredoc so the examples follow TAG above; the one literal ${...} is escaped.
   cat <<EOF
-hoosky installer — installs the prepare-commit-msg hook (release ${TAG})
+quad installer — installs the prepare-commit-msg hook (release ${TAG})
 
 usage: install.sh [options]
 
@@ -38,7 +42,7 @@ usage: install.sh [options]
                    core.hooksPath globally to \${XDG_CONFIG_HOME:-~/.config}/git/hooks if unset
   --dir PATH       install into the repo at PATH (repeatable)
   --all ROOT       discover repos under ROOT and install into each
-  --uninstall      remove hoosky (only if the installed hook matches the published checksum)
+  --uninstall      remove quad (only if the installed hook matches the published checksum)
   --force          overwrite an unmanaged hook, or uninstall without the checksum match
   --help           this text
 
@@ -125,7 +129,7 @@ global_hooks_dir() {
   hp="$(git config --global core.hooksPath 2>/dev/null)" || hp=""
   if [ -n "$hp" ]; then
     if ! expanded="$(expand_hooks_path "$hp")"; then
-      err "global core.hooksPath '$hp' is relative; git resolves it relative to each repo's hook working directory, so there is no single directory hoosky can install into. Set an absolute path (e.g. git config --global core.hooksPath \"\$HOME/.config/git/hooks\") or pass --dir/--all."
+      err "global core.hooksPath '$hp' is relative; git resolves it relative to each repo's hook working directory, so there is no single directory quad can install into. Set an absolute path (e.g. git config --global core.hooksPath \"\$HOME/.config/git/hooks\") or pass --dir/--all."
       return 1
     fi
     printf '%s\n' "$expanded"
@@ -143,6 +147,15 @@ global_hooks_dir() {
   printf '%s\n' "$xdg/git/hooks"
 }
 
+# Read the global hooksPath ownership key, accepting the pre-rebrand spelling so an
+# installation made by hoosky can still be cleaned up by quad.
+managed_hooks_dir() {
+  local v
+  v="$(git config --global "$MANAGED_KEY" 2>/dev/null || true)"
+  [ -n "$v" ] || v="$(git config --global "$LEGACY_MANAGED_KEY" 2>/dev/null || true)"
+  printf '%s\n' "$v"
+}
+
 # After a global install: point core.hooksPath at $hd if it isn't set yet, otherwise the
 # hook is installed where git never looks. Record ownership so uninstall can undo only what
 # we changed — a hooksPath the user set themselves is never removed. Setting the global
@@ -156,8 +169,8 @@ global_post_action() {  # <hd> <install|uninstall> -> 0 ok, 1 failed
     if git config --global core.hooksPath "$hd"; then
       err "WARNING: global core.hooksPath makes Git ignore every repository's .git/hooks directory."
       err "WARNING: pre-existing repo-local hooks will stop running; use --dir PATH or --all ROOT for a narrower install."
-      err "set global core.hooksPath to $hd — hoosky now runs in every git repository"
-      if git config --global hoosky.hooksPathManaged "$hd"; then
+      err "set global core.hooksPath to $hd — quad now runs in every git repository"
+      if git config --global "$MANAGED_KEY" "$hd"; then
         :
       else
         err "note: could not record ownership of core.hooksPath; --uninstall will leave it in place"
@@ -168,7 +181,7 @@ global_post_action() {  # <hd> <install|uninstall> -> 0 ok, 1 failed
     return 1
   fi
   cur="$(git config --global core.hooksPath 2>/dev/null || true)"
-  managed="$(git config --global hoosky.hooksPathManaged 2>/dev/null || true)"
+  managed="$(managed_hooks_dir)"
   if [ -n "$managed" ] && [ "$managed" = "$hd" ] && [ -n "$cur" ] \
     && cur="$(expand_hooks_path "$cur")" && [ "$cur" = "$hd" ]; then
     # Only unset when nothing else lives in the shared hooks dir; removing the path
@@ -178,8 +191,13 @@ global_post_action() {  # <hd> <install|uninstall> -> 0 ok, 1 failed
     # leftover made us unset core.hooksPath — silently disabling other hooks in the dir.
     leftover="$(find "$hd" ! -path "$hd" ! -name "$HOOK_NAME*" -print 2>/dev/null | head -n 1)"
     if [ -z "$leftover" ]; then
-      if git config --global --unset core.hooksPath && git config --global --unset hoosky.hooksPathManaged; then
-        err "removed the global core.hooksPath hoosky set — per-repo .git/hooks are active again"
+      # Clear both spellings best-effort: a pre-rebrand install has only the legacy
+      # key, so requiring the new key to exist would skip the success path (and its
+      # message) even though core.hooksPath was removed.
+      git config --global --unset "$LEGACY_MANAGED_KEY" 2>/dev/null || true
+      git config --global --unset "$MANAGED_KEY" 2>/dev/null || true
+      if git config --global --unset core.hooksPath; then
+        err "removed the global core.hooksPath quad set — per-repo .git/hooks are active again"
         return 0
       fi
       err "could not unset global core.hooksPath; restore per-repo hooks with: git config --global --unset core.hooksPath"
@@ -204,8 +222,8 @@ repo_hooks_dir() {  # <repo> -> absolute hooks dir
   case "$hd" in /*) printf '%s\n' "$hd" ;; *) printf '%s\n' "$1/$hd" ;; esac
 }
 
-looks_like_hoosky_hook() {  # <file> -> 0 when the file carries hoosky's signature
-  # The GEMINI_API_KEY contract is stable across hoosky releases and foreign hooks
+looks_like_quad_hook() {  # <file> -> 0 when the file carries quad's signature
+  # The GEMINI_API_KEY contract is stable across quad releases and foreign hooks
   # are unlikely to reference it; the checksum stays the authority for uninstall.
   grep -q 'GEMINI_API_KEY' "$1" 2>/dev/null
 }
@@ -253,11 +271,11 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
   if [ "$UNINSTALL" = 1 ]; then
     if [ ! -e "$dest" ]; then
       if [ "$kind" = global ] \
-        && [ "$(git config --global hoosky.hooksPathManaged 2>/dev/null || true)" = "$hd" ]; then
-        # The hook file is gone but the global state hoosky set still shadows every
+        && [ "$(managed_hooks_dir)" = "$hd" ]; then
+        # The hook file is gone but the global state quad set still shadows every
         # repo-local hooks dir; run the same cleanup as a normal uninstall.
         global_post_action "$hd" uninstall
-        printf '%s\n' "$label: no hook file at $dest; removing the global hooksPath hoosky set"
+        printf '%s\n' "$label: no hook file at $dest; removing the global hooksPath quad set"
       else
         printf '%s\n' "$label: no hook installed; nothing to do"
       fi
@@ -282,9 +300,9 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
   if [ -e "$dest" ]; then
     if [ "$(file_sum "$dest")" = "$HOOK_SUM" ] && [ "$FORCE" != 1 ]; then
       printf '%s\n' "$label: already at $TAG; refreshing anyway"
-    elif looks_like_hoosky_hook "$dest"; then
+    elif looks_like_quad_hook "$dest"; then
       cp -a "$dest" "$dest.bak.$before_ts" || { err "$label: backup of $dest failed; refusing to overwrite"; return 1; }
-      printf '%s\n' "$label: existing hoosky hook backed up to $HOOK_NAME.bak.$before_ts; upgrading to $TAG"
+      printf '%s\n' "$label: existing quad hook backed up to $HOOK_NAME.bak.$before_ts; upgrading to $TAG"
     elif [ "$FORCE" = 1 ]; then
       cp -a "$dest" "$dest.bak.$before_ts" || { err "$label: backup of $dest failed; refusing to overwrite"; return 1; }
       printf '%s\n' "$label: existing hook backed up to $HOOK_NAME.bak.$before_ts"
@@ -297,7 +315,7 @@ install_one() {  # <global|repo> <target> -> 0 ok, 1 failed
   mkdir -p "$hd" || { err "$label: cannot create hooks dir $hd"; return 1; }
   cp -a "$TMPD/$HOOK_NAME" "$dest" || { err "$label: could not copy hook to $dest"; return 1; }
   chmod 0755 "$dest" || { err "$label: chmod 0755 $dest failed; git ignores non-executable hooks"; return 1; }
-  printf '%s\n' "$label: hoosky installed (hook: $dest)"
+  printf '%s\n' "$label: quad installed (hook: $dest)"
   if [ "$kind" = global ]; then
     global_post_action "$hd" install
     return $?
@@ -328,7 +346,7 @@ if [ "$UNINSTALL" != 1 ] && [ "$rc" = 0 ]; then
 Next: export GEMINI_API_KEY=... and run `git commit` — the editor opens with an AI draft.
 Installed globally by default, the hook runs in every git repository. NOTE: this shadows
 every repo-local .git/hooks directory; use --dir PATH or --all ROOT to avoid that.
---uninstall restores per-repo hooks when hoosky set the path and no other hooks share it.
+--uninstall restores per-repo hooks when quad set the path and no other hooks share it.
 The hook never blocks a commit; without a key it is inert. SKIP_AI_COMMIT=1 bypasses.
 EOF
 fi

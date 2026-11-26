@@ -1,4 +1,4 @@
-# Releasing hoosky
+# Releasing quad
 
 A release is a **tag**, not a worktree: `install.sh` downloads `prepare-commit-msg` and
 `checksums.txt` from the `TAG` ref on GitHub. There is no CI, so every check below is local
@@ -84,8 +84,8 @@ Do not release from a dirty tree or from a branch other than `main`.
    tree, so passing it proves nothing about what was pushed. From a clean directory:
 
    ```sh
-   curl -fsSL "https://raw.githubusercontent.com/organiqlabs/hoosky/vX.Y.Z/checksums.txt"
-   curl -fsSL "https://raw.githubusercontent.com/organiqlabs/hoosky/vX.Y.Z/install.sh" | bash -n
+   curl -fsSL "https://raw.githubusercontent.com/organiqlabs/quad/vX.Y.Z/checksums.txt"
+   curl -fsSL "https://raw.githubusercontent.com/organiqlabs/quad/vX.Y.Z/install.sh" | bash -n
    ```
 
    Confirm the printed hook hash equals the `sha256sum` of the hook at that tag, and do one
